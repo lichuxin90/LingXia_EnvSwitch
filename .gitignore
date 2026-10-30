@@ -1,0 +1,33 @@
+# 依赖与构建产物
+node_modules/
+/dist
+/.svelte-kit
+/src-tauri/target/
+/src-tauri/gen/schemas/
+target/
+
+# 打包时放进 src-tauri/binaries 的 shim 二进制（带 target triple 后缀，都是编译产物）
+/src-tauri/binaries/
+
+# 运行时数据：装好的真实版本、shim、下载缓存、PATH 备份、日志，绝不入库
+/envswitch-data
+/envswitch-data.location
+/src-tauri/adopt/
+
+# 本地自检与调试留下的东西，不属于产品
+/.probe
+/shots
+/tools
+/dev1.log
+/NVIDIA Corporation/
+__pycache__/
+
+# 环境与编辑器
+.env
+.env.*
+!.env.example
+vite.config.ts.timestamp-*
+.DS_Store
+.idea/
+.vscode/
+*.iml

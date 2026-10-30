@@ -1,0 +1,257 @@
+# 打 tag（形如 v0.1.0）就会跑这条流水线：三个平台各出一份安装包，按官网下载页承诺的文件名改名，
+# 再把 CHANGELOG.md 里对应版本的那一段贴进 GitHub Release 正文。
+# 也可以在仓库的 Actions 页手动运行，手动运行时填要发布的标签名。
+#
+# 安装包里的 envswitch-shim 由 scripts/stage-shim.mjs 先编出来再交给 tauri 打包，
+# 少了它，界面装得上但终端里的 node/python/go 起不来。
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要发布的标签（v 开头，例：v0.1.0）
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: 校验版本号并检查前端
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 标签必须和 tauri.conf.json 里的 version 对上
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          if [ "$tag" != "v$version" ]; then
+            echo "标签 $tag 与 src-tauri/tauri.conf.json 里的版本 $version 不一致；先改版本号，再打标签。" >&2
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "CHANGELOG.md 里没有 $version 这一节，Release 正文会是空的。" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  build:
+    name: 打包 ${{ matrix.name }}
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            id: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi
+          - name: macOS Apple 芯片
+            id: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - name: macOS Intel
+            id: macos-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - name: Linux x64
+            id: linux-x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      ENVSWITCH_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 装 Linux 的打包依赖
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl wget file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 出安装包
+        run: pnpm tauri build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}"
+
+      - name: 核对包里带上了转发用的 envswitch-shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          case "${{ runner.os }}" in
+            Windows)
+              msi="$(ls "$bundle"/msi/*.msi | head -1)"
+              sevenz="$(command -v 7z || echo '/c/Program Files/7-Zip/7z.exe')"
+              echo "--- $msi 里与 envswitch 有关的条目 ---"
+              "$sevenz" l "$msi" | grep -i envswitch
+              "$sevenz" l "$msi" | grep -i "envswitch-shim" | grep -v '^$'
+              ;;
+            macOS)
+              echo "--- .app 内的转发二进制 ---"
+              find "$bundle/macos" -iname 'envswitch-shim*' -size +1k -exec ls -l {} +
+              ;;
+            Linux)
+              echo "--- AppImage 与 deb 源目录内的转发二进制 ---"
+              find "$bundle" -iname 'envswitch-shim*' -size +1k -exec ls -l {} +
+              ;;
+          esac
+
+      - name: 另出一份 Windows 免安装包
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $rel = "src-tauri/target/${{ matrix.target }}/release"
+          $stage = "portable/EnvSwitch"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "$rel/envswitch.exe" "$stage/EnvSwitch.exe"
+          Copy-Item "$rel/envswitch-shim.exe" "$stage/envswitch-shim.exe"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/EnvSwitch-$env:VERSION-x64-portable.zip"
+
+      - name: 按下载页承诺的文件名归集产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          mkdir -p dist
+          case "${{ runner.os }}" in
+            Windows)
+              mv "$bundle"/msi/*.msi "dist/EnvSwitch-$VERSION-x64.msi"
+              ;;
+            macOS)
+              if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+                mv "$bundle"/macos/*.dmg "dist/EnvSwitch-$VERSION-arm64.dmg"
+              else
+                mv "$bundle"/macos/*.dmg "dist/EnvSwitch-$VERSION-x64.dmg"
+              fi
+              ;;
+            Linux)
+              mv "$bundle"/deb/*.deb "dist/envswitch_${VERSION}_amd64.deb"
+              mv "$bundle"/appimage/*.AppImage "dist/EnvSwitch-$VERSION-x86_64.AppImage"
+              ;;
+          esac
+          chmod +x dist/*.AppImage 2>/dev/null || true
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.id }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: 建 GitHub Release
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: 把这一版的更新日志切成 Release 正文
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "一个安装包都没拿到，不发 Release。" >&2
+            exit 1
+          fi
+          {
+            sed -n "/^## \[$VERSION\]/,/^---$/p" CHANGELOG.md | sed '$d'
+            echo
+            echo "## English"
+            echo
+            sed -n "/^### \[$VERSION\]/,/^---$/p" CHANGELOG.md | sed '$d'
+          } > release-notes.md
+          echo "--- 正文 ---"
+          cat release-notes.md
+          ls -l dist
+
+      - name: 发布
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --title "灵匣 · EnvSwitch $TAG" --notes-file release-notes.md --draft=false
+          else
+            gh release create "$TAG" dist/* \
+              --title "灵匣 · EnvSwitch $TAG" \
+              --notes-file release-notes.md \
+              --target "$GITHUB_SHA"
+          fi
+          gh release view "$TAG"

@@ -1,0 +1,69 @@
+[package]
+name = "envswitch"
+version = "0.1.0"
+description = "灵匣·EnvSwitch 多语言运行时版本管理器"
+authors = ["WizardBox"]
+edition = "2024"
+default-run = "envswitch"
+
+[lib]
+name = "envswitch_lib"
+crate-type = ["rlib"]
+
+[features]
+# tauri CLI 打包时自动带上；手搓 cargo 必须显式 --features，否则二进制是 dev 模式，会去连 devUrl 而不是内嵌的 dist。
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+tokio = { version = "1", features = ["fs", "io-util", "rt", "rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["io"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls-native-roots",
+  "http2",
+  "stream",
+  "json",
+] }
+
+sha2 = "0.10"
+hex = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+flate2 = "1"
+tar = "0.4"
+
+dirs = "6"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+regex = "1"
+notify = "8"
+url = "2"
+bzip2 = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Console",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

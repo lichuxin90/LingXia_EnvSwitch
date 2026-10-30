@@ -1,0 +1,158 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * 视觉基线：shadcn/ui 的 Clean Admin 取法——zinc 中性阶 + 单一主色，
+ * 层级靠 1px 边框和极淡阴影拉开，不用光晕、不用亚克力。
+ */
+:root {
+  --radius: 0.7rem;
+  /* 整页铺纯白，页面和卡片靠 1px 边框分层，不再用浅灰底托卡片。 */
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(240 6% 10%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(240 6% 10%);
+  --muted: hsl(240 5% 96%);
+  --muted-foreground: hsl(240 4% 46%);
+  --border: hsl(240 6% 90%);
+  --input: hsl(240 6% 88%);
+  --ring: hsl(221 83% 53%);
+  --primary: hsl(221 83% 53%);
+  --primary-foreground: hsl(0 0% 100%);
+  --accent: hsl(214 100% 97%);
+  --accent-foreground: hsl(224 76% 33%);
+  --destructive: hsl(0 72% 51%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --success: hsl(144 61% 36%);
+  --success-foreground: hsl(0 0% 100%);
+  --warning: hsl(32 95% 33%);
+  --warning-foreground: hsl(0 0% 100%);
+  --sidebar: hsl(0 0% 100%);
+  --detail: hsl(0 0% 100%);
+  /* Clean Admin 的卡片是平的，只留一条几乎看不见的落地阴影。 */
+  --elevate: 0 1px 2px rgb(15 15 25 / 0.05);
+  --elevate-hi: 0 1px 3px rgb(15 15 25 / 0.08), 0 1px 2px rgb(15 15 25 / 0.04);
+}
+
+.dark {
+  --background: hsl(240 6% 7%);
+  --foreground: hsl(240 5% 96%);
+  --card: hsl(240 6% 10%);
+  --card-foreground: hsl(240 5% 96%);
+  --muted: hsl(240 4% 16%);
+  --muted-foreground: hsl(240 5% 65%);
+  --border: hsl(240 4% 18%);
+  --input: hsl(240 4% 22%);
+  --ring: hsl(217 91% 60%);
+  --primary: hsl(217 91% 60%);
+  --primary-foreground: hsl(240 6% 8%);
+  --accent: hsl(217 33% 20%);
+  --accent-foreground: hsl(214 100% 92%);
+  --destructive: hsl(0 63% 50%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --success: hsl(142 60% 45%);
+  --success-foreground: hsl(240 6% 8%);
+  --warning: hsl(48 96% 53%);
+  --warning-foreground: hsl(240 6% 8%);
+  --sidebar: hsl(240 6% 9%);
+  --detail: hsl(240 5% 12%);
+  --elevate: 0 1px 2px rgb(0 0 0 / 0.35);
+  --elevate-hi: 0 1px 3px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-detail: var(--detail);
+  /* 字号阶梯对齐参考稿：正文 14，标题 15，密集信息 13，不再用 11/12px 的小字。 */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.625rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family:
+      "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Yu Gothic UI", "Noto Sans CJK JP",
+      system-ui, -apple-system, sans-serif;
+    font-size: 0.875rem;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+  input,
+  textarea {
+    user-select: text;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--muted-foreground) 32%, transparent);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  .mono {
+    font-family: "Cascadia Mono", "Consolas", "NSimSun", ui-monospace, monospace;
+    font-variant-ligatures: none;
+  }
+  .elevate {
+    box-shadow: var(--elevate);
+  }
+  .elevate-hi {
+    box-shadow: var(--elevate-hi);
+  }
+}
