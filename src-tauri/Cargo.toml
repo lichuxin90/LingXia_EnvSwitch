@@ -2,7 +2,7 @@
 name = "envswitch"
 version = "0.1.0"
 description = "灵匣·EnvSwitch 多语言运行时版本管理器"
-authors = ["WizardBox"]
+authors = ["李初心"]
 edition = "2024"
 default-run = "envswitch"
 # 关掉自动发现：src/bin 下那个转发程序要在下面显式声明，才能挂上 required-features。
