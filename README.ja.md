@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | 日本語
 
-公式サイト：<https://envswitch.iamap.cn>　·　[変更履歴](CHANGELOG.md)　·　問題報告：<https://github.com/lichuxin90/LingXia_EnvSwitch/issues>
+[変更履歴](CHANGELOG.md)　·　問題報告：[https://github.com/lichuxin90/LingXia_EnvSwitch/issues](https://github.com/lichuxin90/LingXia_EnvSwitch/issues)
 
 ---
 
@@ -35,7 +35,7 @@ EnvSwitch はそれらを 1 つのグラフィカルインターフェースに�
 ## 対応しているランタイム
 
 | ランタイム | バージョン取得元 | 説明 |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | Node.js | nodejs.org の公式 dist、npmmirror ミラーに切替可 | npm、npx など同梱コマンドのフォワーディングを含む |
 | Python | python-build-standalone のリリース成果物 | gh-proxy 系の加速プレフィックス経由でダウンロード可、サブナビゲーションに PyPy を含む |
 | Go | go.dev/dl、golang.google.cn に切替可 | gofmt、go vet 系のコマンドのフォワーディングを含む |
@@ -46,9 +46,12 @@ EnvSwitch はそれらを 1 つのグラフィカルインターフェースに�
 ## はじめ方
 
 1. 公式サイトからインストールパッケージをダウンロードし（正式リリース後は GitHub Releases でも取得できます）、インストールして起動します。
+
 2. 初めての起動では、ランタイムを置くフォルダを選びます。既定はプログラムと同じ階層の `envswitch-data` で、
    システムドライブ以外を選ぶこともできます（例 `D:\envswitch-data`）。C ドライブを避けることをおすすめします。1 バージョンで数百 MB になることが珍しくありません。
+
 3. ホームの環境チェックが、コマンド入口が PATH に入っているか、ターミナル連携がオンになっているかを教えてくれ、ワンクリックで処理できるものはそのまま押せます。
+
 4. 「ランタイム」ページでバージョンを選び、インストールを押します。完了したら新しいターミナルを開いて：
 
    ```powershell
@@ -71,14 +74,14 @@ EnvSwitch はそれらを 1 つのグラフィカルインターフェースに�
 グラフィカルインターフェースとコマンドラインは同じ設定を共有し、フォワーダーファイル自体がコマンドラインツールです：
 
 | コマンド | 役割 |
-| --- | --- |
+| :--- | :--- |
 | `envswitch-shim` | 現在のフォルダでどのバージョンが使われるかを知らせます。ターミナルのスクリプトから呼ぶのに適しています |
 | `envswitch-shim status` | 各ツールの現在のバージョン、有効になった理由、PATH の実際の並び位置を列挙します |
 | `envswitch-shim use <工具> [版本]` | 現在のフォルダのバージョンを固定し、`.tool-versions` に書き込みます |
 | `envswitch-shim unuse <工具>` | 現在のフォルダ内での、特定のツールの固定を取り消します |
 | `envswitch-shim global <工具> <版本>` | グローバル既定バージョンを設定します |
 | `envswitch-shim shims sync` | フォワーダーファイルを再生成します |
-| `envswitch-shim hooks [on|off]` | ターミナル連携の状態確認、またはオン・オフ |
+| `envswitch-shim hooks [on/off]` | ターミナル連携の状態確認、またはオン・オフ |
 | `envswitch-shim help` | 完全な使い方 |
 
 `status` の PATH 並び位置は 2 系統に分けて説明します。現在のターミナルの分が、このコマンドが実際にぶつかる順序で、
@@ -165,5 +168,6 @@ PATH を書き込む前に元の値を必ず 1 件保存しています。「環
 
 ## 貢献
 
-問題や要望は Issue へ：<https://github.com/lichuxin90/LingXia_EnvSwitch/issues>
-役に立つと思ったら、リポジトリに Star を付けていただけると嬉しいです：<https://github.com/lichuxin90/LingXia_EnvSwitch>
+問題や要望は Issue へ：[https://github.com/lichuxin90/LingXia_EnvSwitch/issues](https://github.com/lichuxin90/LingXia_EnvSwitch/issues)
+役に立つと思ったら、リポジトリに Star を付けていただけると嬉しいです：[https://github.com/lichuxin90/LingXia_EnvSwitch](https://github.com/lichuxin90/LingXia_EnvSwitch)
+

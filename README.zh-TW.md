@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | 繁體中文 | [English](README.en.md) | [日本語](README.ja.md)
 
-官網：<https://envswitch.iamap.cn> · [更新日誌](CHANGELOG.md) · 問題回報：<https://github.com/lichuxin90/LingXia_EnvSwitch/issues>
+[更新日誌](CHANGELOG.md) · 問題回報：[https://github.com/lichuxin90/LingXia_EnvSwitch/issues](https://github.com/lichuxin90/LingXia_EnvSwitch/issues)
 
 ---
 
@@ -35,7 +35,7 @@ EnvSwitch 把這些收進一個圖形介面：版本按統一的目錄規則存�
 ## 支援的執行時
 
 | 執行時 | 版本來源 | 說明 |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | Node.js | nodejs.org 官方 dist，可切到 npmmirror 鏡像 | 含 npm、npx 等隨附命令的轉送 |
 | Python | python-build-standalone 的發布產物 | 可經 gh-proxy 之類的加速前綴下載；子導覽裡有 PyPy |
 | Go | go.dev/dl，可切到 golang.google.cn | 含 gofmt、go vet 一類命令的轉送 |
@@ -46,9 +46,12 @@ EnvSwitch 把這些收進一個圖形介面：版本按統一的目錄規則存�
 ## 上手
 
 1. 從官網下載安裝包（正式發布後也能從 GitHub Releases 取），裝上並打開。
+
 2. 第一次啟動會讓你選一個存放執行時的資料夾。預設放在程式同級的 `envswitch-data`，
    也可以選某個非系統碟（例如 `D:\envswitch-data`）。建議避開 C 槽：一個版本動輒幾百 MB。
+
 3. 首頁檢查會告訴你命令入口有沒有進 PATH、終端機整合開沒開，能一鍵處理的直接點。
+
 4. 到「執行時」頁選版本、點安裝。裝完後新開一個終端機：
 
    ```powershell
@@ -71,14 +74,14 @@ EnvSwitch 把這些收進一個圖形介面：版本按統一的目錄規則存�
 圖形介面和命令列共用同一份設定，轉送檔案本身就是一個命令列工具：
 
 | 命令 | 作用 |
-| --- | --- |
+| :--- | :--- |
 | `envswitch-shim` | 播報目前目錄會用到哪個版本，適合給終端機腳本呼叫 |
 | `envswitch-shim status` | 列出每個工具的目前版本、生效原因，以及 PATH 的真實排位 |
 | `envswitch-shim use <工具> [版本]` | 在目前目錄鎖定版本，寫進 `.tool-versions` |
 | `envswitch-shim unuse <工具>` | 取消目前目錄裡某個工具的鎖定 |
 | `envswitch-shim global <工具> <版本>` | 設定全域預設版本 |
 | `envswitch-shim shims sync` | 重新產生轉送檔案 |
-| `envswitch-shim hooks [on|off]` | 檢視或開關終端機整合 |
+| `envswitch-shim hooks [on/off]` | 檢視或開關終端機整合 |
 | `envswitch-shim help` | 完整用法 |
 
 `status` 裡的 PATH 排位會分兩條來說：目前終端機這一份才是這條命令真正會撞上的順序，
@@ -165,5 +168,6 @@ pnpm tauri build   # 產出安裝包
 
 ## 參與
 
-問題與需求請開 Issue：<https://github.com/lichuxin90/LingXia_EnvSwitch/issues>
-覺得有幫助，歡迎到倉庫點一個 Star：<https://github.com/lichuxin90/LingXia_EnvSwitch>
+問題與需求請開 Issue：[https://github.com/lichuxin90/LingXia_EnvSwitch/issues](https://github.com/lichuxin90/LingXia_EnvSwitch/issues)
+覺得有幫助，歡迎到倉庫點一個 Star：[https://github.com/lichuxin90/LingXia_EnvSwitch](https://github.com/lichuxin90/LingXia_EnvSwitch)
+

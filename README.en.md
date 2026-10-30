@@ -4,7 +4,7 @@ Node.js / Python / Go / PyPy on one machine, each installed once, and every fold
 
 简体中文 | [繁體中文](README.zh-TW.md) | English | [日本語](README.ja.md)
 
-Website: <https://envswitch.iamap.cn> · [Changelog](CHANGELOG.md) · Issues: <https://github.com/lichuxin90/LingXia_EnvSwitch/issues>
+Issues: [https://github.com/lichuxin90/LingXia_EnvSwitch/issues](https://github.com/lichuxin90/LingXia_EnvSwitch/issues)
 
 ---
 
@@ -35,7 +35,7 @@ while a layer of forwarder files (shims) looks at which folder you are in at lau
 ## Supported runtimes
 
 | Runtime | Version source | Notes |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | Node.js | Official nodejs.org dist, switchable to the npmmirror mirror | Forwarding for the bundled commands such as npm and npx |
 | Python | Release artifacts of python-build-standalone | Can be fetched through an acceleration prefix such as gh-proxy; PyPy sits under it in the sub-navigation |
 | Go | go.dev/dl, switchable to golang.google.cn | Forwarding for commands such as gofmt and go vet |
@@ -46,9 +46,12 @@ Other runtimes are planned.
 ## Getting started
 
 1. Download the installer from the website (once releases are out, GitHub Releases works too), install it and open it.
+
 2. The first launch asks you to pick the folder that holds the runtimes. It defaults to `envswitch-data` next to the program,
    and you can choose a drive that is not the system drive (for example `D:\envswitch-data`). Keeping it off drive C is a good idea: one version is easily a few hundred MB.
+
 3. The Home checkup tells you whether the command entry is in PATH and whether terminal integration is on; anything it can handle in one click is a button.
+
 4. On the "Runtimes" page pick a version and press Install. When it finishes, open a new terminal:
 
    ```powershell
@@ -71,14 +74,14 @@ Other runtimes are planned.
 The graphical interface and the command line share one configuration, and the forwarder files are themselves a command-line tool:
 
 | Command | What it does |
-| --- | --- |
+| :--- | :--- |
 | `envswitch-shim` | Announces which version the current folder would use, meant for calling from terminal scripts |
 | `envswitch-shim status` | Lists the current version of each tool, why it took effect, and the real PATH positions |
 | `envswitch-shim use <tool> [version]` | Pins the current folder to a version by writing it into `.tool-versions` |
 | `envswitch-shim unuse <tool>` | Removes one tool's pin from the current folder |
 | `envswitch-shim global <tool> <version>` | Sets the global default version |
 | `envswitch-shim shims sync` | Regenerates the forwarder files |
-| `envswitch-shim hooks [on|off]` | Shows or toggles terminal integration |
+| `envswitch-shim hooks [on/off]` | Shows or toggles terminal integration |
 | `envswitch-shim help` | Full usage |
 
 The PATH positions in `status` are reported on two lines: the current terminal's PATH is the order this command actually hits,
@@ -165,5 +168,6 @@ This project uses the **MIT License + Commons Clause** combination; the full tex
 
 ## Contributing
 
-Bugs and feature requests go to the Issue tracker: <https://github.com/lichuxin90/LingXia_EnvSwitch/issues>
-If this saves you time, a Star on the repository is welcome: <https://github.com/lichuxin90/LingXia_EnvSwitch>
+Bugs and feature requests go to the Issue tracker: [https://github.com/lichuxin90/LingXia_EnvSwitch/issues](https://github.com/lichuxin90/LingXia_EnvSwitch/issues)
+If this saves you time, a Star on the repository is welcome: [https://github.com/lichuxin90/LingXia_EnvSwitch](https://github.com/lichuxin90/LingXia_EnvSwitch)
+
