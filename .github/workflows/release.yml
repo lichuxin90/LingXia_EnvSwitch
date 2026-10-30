@@ -193,39 +193,42 @@ jobs:
           Copy-Item "$rel/envswitch.exe" "$stage/EnvSwitch.exe"
           # 转发程序不再由主构建产出（见 Cargo.toml 里 shim 这个 feature），免安装包里用 stage 好的那份。
           Copy-Item "src-tauri/binaries/envswitch-shim-${{ matrix.target }}.exe" "$stage/envswitch-shim.exe"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path "$stage/*" -DestinationPath "dist/EnvSwitch-$env:VERSION-x64-portable.zip"
+          New-Item -ItemType Directory -Force -Path release-dist | Out-Null
+          Compress-Archive -Path "$stage/*" -DestinationPath "release-dist/EnvSwitch-$env:VERSION-x64-portable.zip"
 
       - name: 按下载页承诺的文件名归集产物
         shell: bash
         run: |
           set -euo pipefail
           bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
-          mkdir -p dist
+          # 单独用 release-dist 归集，不复用 dist：dist 是前端构建的输出目录，
+          # 打包时里面已经有 index.html、logo.png 和 assets/，
+          # 混进安装包一起上传，gh 传资产时撞上目录直接报错。
+          mkdir -p release-dist
           case "${{ runner.os }}" in
             Windows)
-              mv "$bundle"/msi/*.msi "dist/EnvSwitch-$VERSION-x64.msi"
+              mv "$bundle"/msi/*.msi "release-dist/EnvSwitch-$VERSION-x64.msi"
               ;;
             macOS)
               # dmg 在 bundle/dmg 下，不在 bundle/macos（那儿只放 .app，且打完镜像会被清掉）。
               if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-                mv "$bundle"/dmg/*.dmg "dist/EnvSwitch-$VERSION-arm64.dmg"
+                mv "$bundle"/dmg/*.dmg "release-dist/EnvSwitch-$VERSION-arm64.dmg"
               else
-                mv "$bundle"/dmg/*.dmg "dist/EnvSwitch-$VERSION-x64.dmg"
+                mv "$bundle"/dmg/*.dmg "release-dist/EnvSwitch-$VERSION-x64.dmg"
               fi
               ;;
             Linux)
-              mv "$bundle"/deb/*.deb "dist/envswitch_${VERSION}_amd64.deb"
-              mv "$bundle"/appimage/*.AppImage "dist/EnvSwitch-$VERSION-x86_64.AppImage"
+              mv "$bundle"/deb/*.deb "release-dist/envswitch_${VERSION}_amd64.deb"
+              mv "$bundle"/appimage/*.AppImage "release-dist/EnvSwitch-$VERSION-x86_64.AppImage"
               ;;
           esac
-          chmod +x dist/*.AppImage 2>/dev/null || true
-          ls -l dist
+          chmod +x release-dist/*.AppImage 2>/dev/null || true
+          ls -l release-dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.id }}
-          path: dist
+          path: release-dist
           if-no-files-found: error
           retention-days: 30
 
@@ -242,14 +245,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: dist-*
-          path: dist
+          path: release-dist
           merge-multiple: true
 
       - name: 把这一版的更新日志切成 Release 正文
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/*)
+          files=(release-dist/*)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "一个安装包都没拿到，不发 Release。" >&2
             exit 1
@@ -263,18 +266,25 @@ jobs:
           } > release-notes.md
           echo "--- 正文 ---"
           cat release-notes.md
-          ls -l dist
+          ls -l release-dist
 
       - name: 发布
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # 只挑普通文件：gh 碰到目录会直接报 "is a directory"，整条发布就断了。
+          mapfile -t assets < <(find release-dist -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "release-dist 里没有文件，不发 Release。" >&2
+            exit 1
+          fi
+          printf '要挂上 Release 的文件：%s\n' "${assets[@]}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
+            gh release upload "$TAG" "${assets[@]}" --clobber
             gh release edit "$TAG" --title "灵匣 · EnvSwitch $TAG" --notes-file release-notes.md --draft=false
           else
-            gh release create "$TAG" dist/* \
+            gh release create "$TAG" "${assets[@]}" \
               --title "灵匣 · EnvSwitch $TAG" \
               --notes-file release-notes.md \
               --target "$GITHUB_SHA"

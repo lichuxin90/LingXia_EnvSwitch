@@ -14,6 +14,9 @@ target/
 /envswitch-data.location
 /src-tauri/adopt/
 
+# 官网源码不开源：只在本地维护，部署走自己的通道
+/site/
+
 # 本地自检与调试留下的东西，不属于产品
 /.probe
 /shots
