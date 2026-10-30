@@ -131,7 +131,7 @@ pnpm check         # Type check with svelte-check
 pnpm tauri build   # Produce the installer
 ```
 
-Releases come from `.github/workflows/release.yml`: tag a version such as `v0.1.0` and the workflow attaches the installers for all three platforms, plus the Windows portable zip, to a GitHub Release whose body is the matching section of `CHANGELOG.md`. Before bundling, `pnpm tauri build` runs `scripts/stage-shim.mjs`, which compiles the `envswitch-shim` forwarder and puts it inside the package — without it the app installs but `node`, `python` and `go` still do not start in a terminal.
+Releases come from `.github/workflows/release.yml`: tag a version such as `v0.1.0` and the workflow attaches the installers for all three platforms, plus the Windows portable zip, to a GitHub Release whose body is the matching section of `CHANGELOG.md`. Before bundling, `pnpm tauri build` runs `scripts/stage-shim.mjs`, which compiles the `envswitch-shim` forwarder and puts it inside the package. Without it the app installs but `node`, `python` and `go` still do not start in a terminal.
 
 Tech stack: Tauri 2 + Svelte 5 (runes) + TypeScript + Tailwind CSS v4 + a component layer in the shadcn/ui style.
 Directory split: `src/` is the interface, and `src-tauri/src/core/` holds the modules that do the actual work, such as runtime hosting, PATH, download and shim,

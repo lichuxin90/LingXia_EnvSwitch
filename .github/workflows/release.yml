@@ -56,7 +56,8 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          # 本地开发用的是 pnpm 8，lockfileVersion 6.0 也是它的格式；换大版本会重写锁文件。
+          version: 8
 
       - uses: actions/setup-node@v4
         with:
@@ -102,7 +103,8 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          # 本地开发用的是 pnpm 8，lockfileVersion 6.0 也是它的格式；换大版本会重写锁文件。
+          version: 8
 
       - uses: actions/setup-node@v4
         with:
@@ -148,17 +150,22 @@ jobs:
               sevenz="$(command -v 7z || echo '/c/Program Files/7-Zip/7z.exe')"
               echo "--- $msi 里与 envswitch 有关的条目 ---"
               "$sevenz" l "$msi" | grep -i envswitch
-              "$sevenz" l "$msi" | grep -i "envswitch-shim" | grep -v '^$'
+              hits=$("$sevenz" l "$msi" | grep -ci "envswitch-shim" || true)
               ;;
             macOS)
               echo "--- .app 内的转发二进制 ---"
-              find "$bundle/macos" -iname 'envswitch-shim*' -size +1k -exec ls -l {} +
+              find "$bundle/macos" -iname 'envswitch-shim*' -exec ls -l {} +
+              hits=$(find "$bundle/macos" -iname 'envswitch-shim*' -size +1k | wc -l)
               ;;
             Linux)
               echo "--- AppImage 与 deb 源目录内的转发二进制 ---"
-              find "$bundle" -iname 'envswitch-shim*' -size +1k -exec ls -l {} +
+              find "$bundle" -iname 'envswitch-shim*' -exec ls -l {} +
+              hits=$(find "$bundle" -iname 'envswitch-shim*' -size +1k | wc -l)
               ;;
           esac
+          # 没有命中时 find 会安静地返回 0，所以这里按计数判定，别把"没找到"读成"检查通过"。
+          echo "包内体积正常的转发二进制：$hits 个"
+          [ "$hits" -ge 1 ]
 
       - name: 另出一份 Windows 免安装包
         if: runner.os == 'Windows'

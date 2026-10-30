@@ -34,7 +34,7 @@
 ### 已知限制
 
 - 主要在 Windows 10/11 上开发与实跑验证。Linux 与 macOS 的路径处理、PATH 落地（写 `~/.profile` 的托管片段，全体用户走 `/etc/paths.d/`）都已实现，但还没逐平台实跑，遇到偏差请开 Issue。
-- 安装包未做代码签名：Windows 上 SmartScreen 会拦一次，macOS 需要在「系统设置 → 隐私与安全性」里允许打开。
+- 安装包未做代码签名：Windows 上 SmartScreen 会拦一次，macOS 需要在「系统设置」的「隐私与安全性」里允许打开。
 - 界面有四种语言，但命令行输出与程序内部报错里的路径、命令按约定保持中文，不做翻译。
 - 官网的下载页与更新日志页直接读 GitHub Releases，本仓库有第一个 release 之前它们是空的。
 
@@ -49,14 +49,14 @@ First public release. One copy of each runtime per machine, managed from a GUI: 
 #### Added
 
 - **Four runtimes**: Node.js (npm and npx forwarded too), Python (python-build-standalone), Go (gofmt, go vet forwarded) and PyPy (filed under Python).
-- **Version hosting**: list versions from official sources or China mirrors, download, verify SHA256, unpack into place — with progress and cancel.
+- **Version hosting**: list versions from official sources or China mirrors, download, verify SHA256 and unpack into place, with progress reporting and cancel.
 - **Resumable, chunked downloads**: an interrupted download picks up where it stopped; a package that is already complete is never fetched twice.
 - **Offline import**: turn an official archive copied in from another machine into a managed version.
 - **Per-project pinning**: reads `.tool-versions` (the same format asdf uses, one line such as `node 22.14.0`) and applies it as soon as you enter the folder; there is also a picker page.
-- **Global lock**: force one version everywhere, ignoring project declarations — handy for aligning a team.
+- **Global lock**: force one version everywhere, ignoring project declarations; handy for aligning a team.
 - **PATH takeover with rollback**: the previous value is backed up before every write, and any backup can be restored from the Environment & Terminal page; elevates when admin rights are needed.
 - **Terminal integration**: writes a managed snippet into PowerShell / bash / zsh login files, so a fresh terminal knows the command entry points and announces the active version after each `cd`.
-- **Conflict detection**: finds nvm, pyenv and loose older installs, and lets you take them over or coexist — it never quietly deletes someone else's setup.
+- **Conflict detection**: finds nvm, pyenv and loose older installs, and lets you take them over or coexist; it never quietly deletes someone else's setup.
 - **End-of-life notices**: reads endoflife.date and flags versions that no longer get maintenance.
 - **Home health check**: storage location, command entry points, terminal integration and version records on one screen, with one-click fixes where they can be automated.
 - **AI client support**: detects Claude Code, Codex CLI, Cursor, Qoder and friends on the machine and writes the shared runtime notes into their rule files, with a manual folder picker as fallback.
@@ -67,8 +67,8 @@ First public release. One copy of each runtime per machine, managed from a GUI: 
 
 #### Known limitations
 
-- Developed and tested mainly on Windows 10/11. The Linux and macOS path handling and PATH landing (a managed snippet in `~/.profile`, `/etc/paths.d/` for all users) are implemented but not yet exercised on every platform — please open an Issue when you hit a difference.
-- Bundles are unsigned: SmartScreen warns once on Windows, and macOS needs an "Open" approval under System Settings → Privacy & Security.
+- Developed and tested mainly on Windows 10/11. The Linux and macOS path handling and PATH landing (a managed snippet in `~/.profile`, `/etc/paths.d/` for all users) are implemented but not yet exercised on every platform; please open an Issue when you hit a difference.
+- Bundles are unsigned: SmartScreen warns once on Windows, and macOS needs an "Open" approval under System Settings, Privacy & Security.
 - The UI speaks four languages, but terminal output and the paths inside internal errors stay in Chinese by design.
 - The website's download and changelog pages read GitHub Releases directly, so they stay empty until this repository has its first release.
 

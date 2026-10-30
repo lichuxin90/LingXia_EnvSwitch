@@ -10,7 +10,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TARGET");
 
     // tauri-build 在 dev 和 release 两条路上都会先检查 externalBin 的文件在不在，
-    // 不在就直接把整个 cargo build 判失败——而这个文件恰恰要靠 cargo build 才能产出来。
+    // 不在就直接把整个 cargo build 判失败，而这个文件恰恰要靠 cargo build 才能产出来。
     // 所以这里先补一个空的占位让检查通过，真实内容由 scripts/stage-shim.mjs 在打包前覆盖上去。
     // 运行时也不会误用空文件：core::shim 只认有一定体积的候选。
     let ext = if target.contains("windows") { ".exe" } else { "" };
