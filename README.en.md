@@ -160,7 +160,7 @@ This project uses the **MIT License + Commons Clause** combination; the full tex
 
 - You are free to use, copy, modify, merge, publish, redistribute, sublicense this software, and to release modified versions of it.
 - You may not sell this software itself as a product, including as paid hosting, paid consulting or packaged delivery.
-- When you redistribute it, keep the copyright notice, mark what you changed and where, and show the attribution "灵匣 · EnvSwitch" in a prominent place.
+- When you redistribute it, keep the copyright notice, mark what you changed and where, and show the attribution "灵匣 · EnvSwitch" (copyright held by 李初心 / Li Chuxin) in a prominent place.
 - To use EnvSwitch in a commercial sale, get the author's permission first.
 
 ## Contributing

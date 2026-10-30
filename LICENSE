@@ -1,4 +1,4 @@
-版权所有 (c) 2026 灵匣·EnvSwitch (LingXia EnvSwitch)
+版权所有 (c) 2026 李初心（灵匣·EnvSwitch 的作者）
 
 【中文说明，便于阅读；具法律效力的文本见下方英文原文】
 
@@ -12,15 +12,15 @@
 必须做到：
 1. 在上述任何副本或实质部分中保留下方的版权声明和本许可声明。
 2. 修改后发布的版本，请在明显位置标明你改过哪些内容。
-3. 分发或展示本软件时，在明显位置署名"灵匣·EnvSwitch"。
+3. 分发或展示本软件时，在明显位置署名"灵匣·EnvSwitch"，并注明作者是李初心。
 
-想谈商业授权，请联系仓库维护者。
+想谈商业授权，请联系版权持有人 李初心。
 
 ---
 
 MIT License with Commons Clause License Condition v1.0
 
-Copyright (c) 2026 灵匣·EnvSwitch (LingXia EnvSwitch)
+Copyright (c) 2026 李初心 (Li Chuxin), author of 灵匣·EnvSwitch (LingXia EnvSwitch)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -34,7 +34,8 @@ portions of the Software.
 
 Modified versions must clearly state, in a prominent place, what changes were
 made; any distribution or public display of the Software must prominently
-attribute it to "灵匣·EnvSwitch (LingXia EnvSwitch)".
+attribute it to "灵匣·EnvSwitch (LingXia EnvSwitch)" and name 李初心 (Li Chuxin)
+as its author.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -65,4 +66,4 @@ Commons Clause License Condition notice.
 
 Software: 灵匣·EnvSwitch (LingXia EnvSwitch)
 License: MIT (as modified above)
-Licensor: 灵匣·EnvSwitch (LingXia EnvSwitch)
+Licensor: 李初心 (Li Chuxin)
