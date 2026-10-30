@@ -150,12 +150,28 @@ jobs:
               sevenz="$(command -v 7z || echo '/c/Program Files/7-Zip/7z.exe')"
               echo "--- $msi 里与 envswitch 有关的条目 ---"
               "$sevenz" l "$msi" | grep -i envswitch
-              hits=$("$sevenz" l "$msi" | grep -ci "envswitch-shim" || true)
+              # 7z 列出的是 msi 内部的条目名，转发程序在那儿叫 Bin_envswitch_shim.exe（下划线），
+              # 只按文件名 envswitch-shim.exe 去找会一条都不命中。
+              hits=$("$sevenz" l "$msi" | grep -cE 'envswitch[-_]shim' || true)
               ;;
             macOS)
-              echo "--- .app 内的转发二进制 ---"
-              find "$bundle/macos" -iname 'envswitch-shim*' -exec ls -l {} +
-              hits=$(find "$bundle/macos" -iname 'envswitch-shim*' -size +1k | wc -l)
+              # 打完 dmg 后 tauri 会把 bundle/macos 里的 .app 清掉，只剩 dmg；
+              # 所以要挂载 dmg 看真发出去的那份，不能去翻已经删掉的中间目录。
+              dmg="$(ls "$bundle"/dmg/*.dmg | head -1)"
+              echo "--- 挂载 $dmg 检查 .app 内的转发二进制 ---"
+              mnt="$(mktemp -d)"
+              hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" > /dev/null
+              app="$(find "$mnt" -maxdepth 2 -iname '*.app' | head -1)"
+              if [ -z "$app" ]; then
+                echo "挂载点里没有 .app："
+                ls -l "$mnt"
+                hdiutil detach "$mnt" || true
+                exit 1
+              fi
+              echo "包目录：$app"
+              find "$app" -iname '*envswitch*shim*' -exec ls -l {} +
+              hits=$(find "$app" -iname '*envswitch*shim*' -size +1k | wc -l)
+              hdiutil detach "$mnt" > /dev/null
               ;;
             Linux)
               echo "--- AppImage 与 deb 源目录内的转发二进制 ---"
@@ -191,10 +207,11 @@ jobs:
               mv "$bundle"/msi/*.msi "dist/EnvSwitch-$VERSION-x64.msi"
               ;;
             macOS)
+              # dmg 在 bundle/dmg 下，不在 bundle/macos（那儿只放 .app，且打完镜像会被清掉）。
               if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-                mv "$bundle"/macos/*.dmg "dist/EnvSwitch-$VERSION-arm64.dmg"
+                mv "$bundle"/dmg/*.dmg "dist/EnvSwitch-$VERSION-arm64.dmg"
               else
-                mv "$bundle"/macos/*.dmg "dist/EnvSwitch-$VERSION-x64.dmg"
+                mv "$bundle"/dmg/*.dmg "dist/EnvSwitch-$VERSION-x64.dmg"
               fi
               ;;
             Linux)
