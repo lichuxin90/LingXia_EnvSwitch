@@ -280,13 +280,32 @@ jobs:
             exit 1
           fi
           printf '要挂上 Release 的文件：%s\n' "${assets[@]}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${assets[@]}" --clobber
-            gh release edit "$TAG" --title "灵匣 · EnvSwitch $TAG" --notes-file release-notes.md --draft=false
-          else
-            gh release create "$TAG" "${assets[@]}" \
-              --title "灵匣 · EnvSwitch $TAG" \
-              --notes-file release-notes.md \
-              --target "$GITHUB_SHA"
+
+          # 标签已经存在（这条流水线就是它触发的），建 Release 时不要再传 --target：
+          # 传了会撞上 GitHub 的 HTTP 500，标签指向哪儿 GitHub 自己清楚。
+          publish() {
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${assets[@]}" --clobber
+              gh release edit "$TAG" --title "灵匣 · EnvSwitch $TAG" --notes-file release-notes.md --draft=false
+            else
+              gh release create "$TAG" "${assets[@]}" \
+                --title "灵匣 · EnvSwitch $TAG" \
+                --notes-file release-notes.md
+            fi
+          }
+
+          # 前面四个平台跑了十几分钟，别让一次服务端抖动全作废；传资产是幂等的，重试不重复堆文件。
+          ok=0
+          for attempt in 1 2 3; do
+            if publish; then
+              ok=1
+              break
+            fi
+            echo "第 $attempt 次发布没成功，20 秒后再试。" >&2
+            sleep 20
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "三次都没发出去，上面是 gh 给的报错。" >&2
+            exit 1
           fi
           gh release view "$TAG"
