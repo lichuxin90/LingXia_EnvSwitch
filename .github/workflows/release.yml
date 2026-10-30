@@ -175,7 +175,8 @@ jobs:
           $stage = "portable/EnvSwitch"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item "$rel/envswitch.exe" "$stage/EnvSwitch.exe"
-          Copy-Item "$rel/envswitch-shim.exe" "$stage/envswitch-shim.exe"
+          # 转发程序不再由主构建产出（见 Cargo.toml 里 shim 这个 feature），免安装包里用 stage 好的那份。
+          Copy-Item "src-tauri/binaries/envswitch-shim-${{ matrix.target }}.exe" "$stage/envswitch-shim.exe"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path "$stage/*" -DestinationPath "dist/EnvSwitch-$env:VERSION-x64-portable.zip"
 

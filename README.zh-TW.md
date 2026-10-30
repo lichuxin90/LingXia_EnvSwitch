@@ -126,6 +126,7 @@ envswitch-data/
 
 ```bash
 pnpm install
+pnpm stage:shim    # 編出終端轉發用的 envswitch-shim，開發與打包都靠它
 pnpm tauri dev     # 開發執行，前端在 http://localhost:1420
 pnpm check         # svelte-check 型別檢查
 pnpm tauri build   # 產出安裝包

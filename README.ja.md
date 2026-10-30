@@ -126,6 +126,7 @@ envswitch-data/
 
 ```bash
 pnpm install
+pnpm stage:shim    # ターミナル転送用の envswitch-shim をビルド（開発にも包装にも必要）
 pnpm tauri dev     # 開発実行、フロントエンドは http://localhost:1420
 pnpm check         # svelte-check による型チェック
 pnpm tauri build   # インストールパッケージを生成

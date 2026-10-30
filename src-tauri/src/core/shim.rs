@@ -46,6 +46,11 @@ pub fn shim_bin() -> Result<PathBuf> {
         dirs.push(parent.join("lib").join("envswitch"));
         dirs.push(parent.to_path_buf());
     }
+    // 开发时主程序在 src-tauri/target/debug，而 stage-shim 的产物在 src-tauri/binaries，
+    // 上面几个候选都够不着；只有 debug 构建才回源码树看一眼，发布版不必带这个路径。
+    if cfg!(debug_assertions) {
+        dirs.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries"));
+    }
 
     for d in &dirs {
         for name in &names {

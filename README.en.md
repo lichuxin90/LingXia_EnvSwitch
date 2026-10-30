@@ -126,6 +126,7 @@ Requirements: Node.js (this project is developed on 24), pnpm, Rust (edition 202
 
 ```bash
 pnpm install
+pnpm stage:shim    # Compile envswitch-shim, the forwarder terminals rely on
 pnpm tauri dev     # Development run, the frontend is at http://localhost:1420
 pnpm check         # Type check with svelte-check
 pnpm tauri build   # Produce the installer

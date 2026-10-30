@@ -5,6 +5,9 @@ description = "灵匣·EnvSwitch 多语言运行时版本管理器"
 authors = ["WizardBox"]
 edition = "2024"
 default-run = "envswitch"
+# 关掉自动发现：src/bin 下那个转发程序要在下面显式声明，才能挂上 required-features。
+# 开着自动发现时，cargo 会自己造一个同名 bin 目标并无视声明里的 feature 门槛（cargo metadata 里 required_features 为空就是这个现象）。
+autobins = false
 
 [lib]
 name = "envswitch_lib"
@@ -13,6 +16,22 @@ crate-type = ["rlib"]
 [features]
 # tauri CLI 打包时自动带上；手搓 cargo 必须显式 --features，否则二进制是 dev 模式，会去连 devUrl 而不是内嵌的 dist。
 custom-protocol = ["tauri/custom-protocol"]
+# 转发用的控制台程序只在 scripts/stage-shim.mjs 里显式开启。
+# 不这么做的话，主构建会顺手在 target/release 里也产出一份 envswitch-shim.exe，
+# tauri 会把这份和 externalBin 那份装进同一个安装目录，
+# msi 链接时判定"同一个目标文件由两个组件安装"（ICE30）直接失败。
+shim = []
+
+# 主程序：图形界面，控制台窗口不该由它带出来。
+[[bin]]
+name = "envswitch"
+path = "src/main.rs"
+
+# 同一个 [[bin]] 声明配合上面的 required-features，把 src/bin/envswitch-shim.rs 从主构建里摘出去。
+[[bin]]
+name = "envswitch-shim"
+path = "src/bin/envswitch-shim.rs"
+required-features = ["shim"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "stage:shim": "node scripts/stage-shim.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
