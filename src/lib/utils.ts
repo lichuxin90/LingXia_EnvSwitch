@@ -17,13 +17,17 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   python: "Python",
   go: "Go",
   pypy: "PyPy",
+  php: "PHP",
+  mysql: "MySQL",
+  bun: "Bun",
+  deno: "Deno",
 };
 
 /** 下载源等页面按工具逐个设置，四个都要露出来。 */
-export const ALL_TOOLS: ToolId[] = ["node", "python", "go", "pypy"];
+export const ALL_TOOLS: ToolId[] = ["node", "python", "go", "pypy", "php", "mysql", "bun", "deno"];
 
 /** 侧边栏「运行时」单列出来的工具；PyPy 归在 Python 底下，不另开一项。 */
-export const NAV_TOOLS: ToolId[] = ["node", "python", "go"];
+export const NAV_TOOLS: ToolId[] = ["node", "python", "go", "php", "mysql", "bun", "deno"];
 
 /**
  * 下载源的名字由后端给出、写的是中文，界面按「工具 + 源 id」查词条。
@@ -233,6 +237,12 @@ export function baseName(p: string | null | undefined): string {
   if (!p) return "";
   const parts = p.split(/[\\/]/);
   return parts[parts.length - 1] || p;
+}
+
+/** 这个路径是不是落在系统盘上。盘符由后端给（Windows 通常是 C:），别的平台一律 false。 */
+export function onSystemDrive(dir: string, systemDrive: string): boolean {
+  if (!dir || !systemDrive) return false;
+  return dir.trim().slice(0, systemDrive.length).toUpperCase() === systemDrive.toUpperCase();
 }
 
 export function percentOf(received: number, total: number | null): number {

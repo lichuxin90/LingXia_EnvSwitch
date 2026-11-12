@@ -16,6 +16,10 @@ pub const HINT_FILES: &[(ToolId, &str)] = &[
     (ToolId::Python, ".python-version"),
     (ToolId::Go, ".go-version"),
     (ToolId::PyPy, ".pypy-version"),
+    (ToolId::Php, ".php-version"),
+    (ToolId::MySql, ".mysql-version"),
+    (ToolId::Bun, ".bun-version"),
+    (ToolId::Deno, ".deno-version"),
 ];
 
 /// `.tool-versions` 与 asdf 一致：`node 20.18.0`，一行一个工具，多版本取第一个。
@@ -167,7 +171,9 @@ pub fn resolve_with(
         note: None,
     };
 
-    if settings.auto_switch && !settings.lock_global {
+    // 目录为空表示界面还没选过项目：这时只按全局默认算，别拿空路径去向上找声明，
+    // 空路径会被当成相对路径落到进程的工作目录上。
+    if settings.auto_switch && !settings.lock_global && !cwd.as_os_str().is_empty() {
         let mut dir = Some(cwd.to_path_buf());
         while let Some(d) = dir {
             if let Ok(Some(lock)) = read_project(&d)

@@ -23,7 +23,7 @@
   {disabled}
   onclick={() => onchange(!checked)}
   class={cn(
-    "relative h-6 w-11 shrink-0 rounded-full border transition-colors",
+    "relative h-5 w-9 shrink-0 rounded-full border transition-colors",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
     checked ? "border-primary bg-primary" : "border-input bg-input",
     className,
@@ -31,8 +31,8 @@
 >
   <span
     class={cn(
-      "absolute top-1/2 size-5 -translate-y-1/2 rounded-full bg-background shadow-sm transition-all",
-      checked ? "left-[22px]" : "left-0.5",
+      "absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-background shadow-sm transition-all",
+      checked ? "left-[18px]" : "left-0.5",
     )}
   ></span>
 </button>

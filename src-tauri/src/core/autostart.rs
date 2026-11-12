@@ -18,7 +18,11 @@ pub fn set(on: bool) -> Result<()> {
             run.set_value(ENTRY_NAME, &command())
                 .map_err(|e| Error::Permission(format!("写不进启动项：{e}")))?;
         } else {
-            let _ = run.delete_value(ENTRY_NAME);
+            match run.delete_value(ENTRY_NAME) {
+                Ok(()) => {},
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Err(e) => return Err(Error::Permission(format!("删除启动项失败：{e}"))),
+            }
         }
     }
     #[cfg(not(windows))]

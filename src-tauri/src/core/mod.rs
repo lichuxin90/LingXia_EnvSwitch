@@ -14,6 +14,7 @@ pub mod job;
 pub mod mirror;
 pub mod model;
 pub mod offline;
+pub mod package_sources;
 pub mod pathmod;
 pub mod paths;
 pub mod records;

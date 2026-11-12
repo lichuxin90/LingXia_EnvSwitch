@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Database, CodeXml, Terminal, CircleDashed } from "@lucide/svelte";
   import type { ToolId } from "$lib/types";
 
   interface Props {
@@ -54,6 +55,14 @@
     <path d="M9.4 12.2h5.2" stroke="#0b3a4a" stroke-width="1.1" stroke-linecap="round" />
     <path d="M4.4 8.6h2.2M17.4 8.6h2.2" stroke="#00add8" stroke-width="1.5" stroke-linecap="round" />
   </svg>
+{:else if tool === "php"}
+  <CodeXml class={className} color="#777bb4" aria-hidden="true" />
+{:else if tool === "mysql"}
+  <Database class={className} color="#00758f" aria-hidden="true" />
+{:else if tool === "bun"}
+  <Terminal class={className} color="#c29055" aria-hidden="true" />
+{:else if tool === "deno"}
+  <CircleDashed class={className} aria-hidden="true" />
 {:else}
   <svg viewBox="0 0 24 24" class={className} aria-hidden="true">
     <circle cx="8.4" cy="9.4" r="3.6" fill="none" stroke="#ff6f1f" stroke-width="1.8" />

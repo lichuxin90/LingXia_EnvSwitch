@@ -58,6 +58,43 @@ pub fn probe_client(settings: &Settings) -> Result<reqwest::Client> {
         .map_err(|e| Error::Detail(format!("测速组件起不来：{e}")))?)
 }
 
+/// Use the operating-system country setting, never the UI language or an IP lookup.
+pub fn system_region() -> String {
+    #[cfg(windows)]
+    {
+        use winreg::{RegKey, enums::HKEY_CURRENT_USER};
+        if let Ok(geo) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Control Panel\International\Geo") {
+            if let Ok(name) = geo.get_value::<String, _>("Name") {
+                if !name.trim().is_empty() { return name.trim().to_ascii_uppercase(); }
+            }
+            if geo.get_value::<String, _>("Nation").ok().as_deref() == Some("45") {
+                return "CN".into();
+            }
+        }
+    }
+    for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(locale) = std::env::var(key) {
+            if let Some(country) = locale.split(['_', '-']).nth(1) {
+                return country.split(['.', '@']).next().unwrap_or("").to_ascii_uppercase();
+            }
+        }
+    }
+    "GLOBAL".into()
+}
+
+fn region_priority(country: &str, source_region: &str) -> u8 {
+    if country == "CN" {
+        match source_region { "国内" => 0, "第三方" => 1, _ => 2 }
+    } else if source_region == "海外" { 0 } else { 1 }
+}
+
+fn best_probe<'a>(probes: &'a [MirrorProbe], country: &str) -> Option<&'a MirrorProbe> {
+    probes.iter().filter(|p| p.ok)
+        .min_by_key(|p| (region_priority(country, p.region), p.latency_ms.unwrap_or(u64::MAX)))
+}
+
+fn auto_key(tool: ToolId) -> String { format!("{}@{}:region-v1", tool.as_str(), system_region()) }
+
 static AUTO: Mutex<Option<(Instant, Vec<(String, String)>)>> = Mutex::new(None);
 
 fn auto_cache_path() -> Result<PathBuf> {
@@ -97,10 +134,7 @@ pub async fn resolve_source(
     }
 
     let probes = probe_sources(client, plugin).await;
-    let best = probes
-        .iter()
-        .filter(|p| p.ok)
-        .min_by_key(|p| p.latency_ms.unwrap_or(u64::MAX))
+    let best = best_probe(&probes, &system_region())
         .map(|p| p.id.clone())
         .ok_or_else(|| {
             Error::Network(
@@ -140,7 +174,7 @@ fn custom_source(plugin: &Plugin, settings: &Settings) -> Result<SourceInfo> {
             base.probe_url = format!("{raw}/index.json");
         }
         // Python 的清单必须走 GitHub API，自定义地址只能当下载中转前缀。
-        ToolId::Python => {
+        ToolId::Python | ToolId::Php | ToolId::MySql | ToolId::Bun | ToolId::Deno => {
             base.wrap = Some(format!("{raw}/{{url}}"));
         }
         // Go 和 PyPy 的清单就在下载目录本身，换根地址等于整套换掉。
@@ -166,20 +200,20 @@ fn cached_auto(tool: ToolId) -> Option<String> {
     if let Ok(guard) = AUTO.lock()
         && let Some((at, list)) = guard.as_ref()
         && at.elapsed() < AUTO_TTL
-        && let Some((_, id)) = list.iter().find(|(t, _)| t == tool.as_str())
+        && let Some((_, id)) = list.iter().find(|(t, _)| t == &auto_key(tool))
     {
         return Some(id.clone());
     }
-    // 内存里没有就看磁盘，重启后一小时内不必再测一遍。
+    // 内存里没有就看磁盘，重启后六小时内不必再测一遍。
     let file = auto_cache_path().ok()?;
     let stored: StoredChoice = util::read_json_opt(&file).ok()?.unwrap_or_default();
     let at = chrono::DateTime::parse_from_rfc3339(&stored.at).ok()?;
     let age = chrono::Local::now().signed_duration_since(at.with_timezone(&chrono::Local));
-    if age.num_seconds() < AUTO_TTL.as_secs() as i64 {
+    if age.num_seconds() >= 0 && age.num_seconds() < AUTO_TTL.as_secs() as i64 {
         stored
             .chosen
             .iter()
-            .find(|(t, _)| t == tool.as_str())
+            .find(|(t, _)| t == &auto_key(tool))
             .map(|(_, id)| id.clone())
     } else {
         None
@@ -193,8 +227,8 @@ fn remember_auto(tool: ToolId, id: &str) {
     {
         list = cached.clone();
     }
-    list.retain(|(t, _)| t != tool.as_str());
-    list.push((tool.as_str().to_string(), id.to_string()));
+    list.retain(|(t, _)| t != &auto_key(tool));
+    list.push((auto_key(tool), id.to_string()));
     if let Ok(mut guard) = AUTO.lock() {
         *guard = Some((Instant::now(), list.clone()));
     }
@@ -209,56 +243,24 @@ fn remember_auto(tool: ToolId, id: &str) {
     }
 }
 
-/// 逐个源量一次首字节时间。失败不算错误，只是这条不参与选择。
+/// Probe sources concurrently with a strict timeout. HTTP failures must not win selection.
 pub async fn probe_sources(client: &reqwest::Client, plugin: &Plugin) -> Vec<MirrorProbe> {
-    let mut out = Vec::new();
-    for src in plugin.sources() {
+    futures_util::future::join_all(plugin.sources().into_iter().map(|src| async move {
         let start = Instant::now();
-        let result = client
-            .get(&src.probe_url)
+        let result = client.get(&src.probe_url)
             .header(reqwest::header::RANGE, "bytes=0-1023")
-            .send()
-            .await
-            .and_then(|r| Ok(r.status().as_u16()));
-        let latency = start.elapsed().as_millis() as u64;
-        match result {
-            Ok(code) if code < 500 => out.push(MirrorProbe {
-                id: src.id,
-                label: src.label,
-                url: src.probe_url,
-                region: src.region,
-                ok: code < 400 || code == 404 || code == 403,
-                latency_ms: Some(latency),
-                error: if code < 400 {
-                    None
-                } else {
-                    Some(format!("远端回了 {code}"))
-                },
-                selected: false,
-            }),
-            Ok(code) => out.push(MirrorProbe {
-                id: src.id,
-                label: src.label,
-                url: src.probe_url,
-                region: src.region,
-                ok: false,
-                latency_ms: Some(latency),
-                error: Some(format!("远端回了 {code}")),
-                selected: false,
-            }),
-            Err(e) => out.push(MirrorProbe {
-                id: src.id,
-                label: src.label,
-                url: src.probe_url,
-                region: src.region,
-                ok: false,
-                latency_ms: None,
-                error: Some(e.to_string()),
-                selected: false,
-            }),
-        }
-    }
-    out
+            .timeout(PROBE_TIMEOUT).send().await;
+        let (ok, latency_ms, error) = match result {
+            Ok(response) => {
+                let status = response.status();
+                (status.is_success(), Some(start.elapsed().as_millis() as u64),
+                    if status.is_success() { None } else { Some(format!("远端回了 {}", status.as_u16())) })
+            }
+            Err(e) => (false, None, Some(e.to_string())),
+        };
+        MirrorProbe { id: src.id, label: src.label, url: src.probe_url, region: src.region,
+            ok, latency_ms, error, selected: false }
+    })).await
 }
 
 /// 清单结果连同"这份清单是哪来的、多久前的"一起给界面，
@@ -282,13 +284,14 @@ pub async fn versions(
     src: &SourceInfo,
     refresh: bool,
 ) -> Result<ListOutcome> {
-    let file = paths::layout()?
-        .config_path(&format!("available-{}.json", plugin.id().as_str()));
+    // The Windows-only catalog must not reuse old archive download URLs.
+    let catalog = if plugin.id() == ToolId::MySql { "mysql-windows-v2" } else { plugin.id().as_str() };
+    let file = paths::layout()?.config_path(&format!("available-{catalog}.json"));
     let installed: Vec<String> = Registry::load()
         .map(|r| r.list(plugin.id()).into_iter().map(|x| x.version).collect())
         .unwrap_or_default();
 
-    let cached = read_cached(&file);
+    let cached = read_cached(&file, src);
     if !refresh {
         if let Some((age_ms, mut list)) = cached.clone()
             && Duration::from_millis(age_ms) < LIST_TTL
@@ -347,16 +350,21 @@ fn now_ms() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Envelope {
+    #[serde(default)]
+    source_key: String,
     fetched_at_ms: u64,
     versions: Vec<AvailableVersion>,
 }
 
-fn read_cached(file: &Path) -> Option<(u64, Vec<AvailableVersion>)> {
+fn source_key(src: &SourceInfo) -> String { format!("{}|{}|{:?}", src.id, src.base, src.wrap) }
+
+fn read_cached(file: &Path, src: &SourceInfo) -> Option<(u64, Vec<AvailableVersion>)> {
     let env: Envelope = util::read_json_opt(file).ok()?.unwrap_or(Envelope {
+        source_key: String::new(),
         fetched_at_ms: 0,
         versions: Vec::new(),
     });
-    if env.versions.is_empty() {
+    if env.versions.is_empty() || env.source_key != source_key(src) {
         return None;
     }
     let age = now_ms().saturating_sub(env.fetched_at_ms);
@@ -367,6 +375,7 @@ fn write_cached(file: &Path, src: &SourceInfo, list: &[AvailableVersion]) -> Res
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct WriteEnvelope<'a> {
+        source_key: String,
         source_id: String,
         source_label: String,
         fetched_at_ms: u64,
@@ -375,6 +384,7 @@ fn write_cached(file: &Path, src: &SourceInfo, list: &[AvailableVersion]) -> Res
     util::write_json(
         file,
         &WriteEnvelope {
+            source_key: source_key(src),
             source_id: src.id.clone(),
             source_label: src.label.clone(),
             fetched_at_ms: now_ms(),
@@ -386,5 +396,48 @@ fn write_cached(file: &Path, src: &SourceInfo, list: &[AvailableVersion]) -> Res
 fn mark_installed(list: &mut [AvailableVersion], installed: &[String]) {
     for v in list {
         v.installed = installed.iter().any(|i| i == &v.version);
+    }
+}
+
+#[cfg(test)]
+mod region_tests {
+    use super::*;
+    #[test]
+    fn changing_mirror_never_reuses_another_catalog() {
+        let root = std::env::temp_dir().join(format!("envswitch-catalog-{}-{}", std::process::id(), now_ms()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("versions.json");
+        let plugin = Plugin::for_tool(ToolId::Deno).unwrap();
+        let official = plugin.sources().remove(0);
+        let mirror = plugin.sources().remove(1);
+        write_cached(&file, &official, &[AvailableVersion { tool: ToolId::Deno, version: "2.5.6".into(), ..Default::default() }]).unwrap();
+        assert!(read_cached(&file, &official).is_some());
+        assert!(read_cached(&file, &mirror).is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+    fn probe(id: &str, region: &'static str, latency: u64, ok: bool) -> MirrorProbe {
+        MirrorProbe { id: id.into(), label: id.into(), url: String::new(), region,
+            ok, latency_ms: Some(latency), error: None, selected: false }
+    }
+    #[test]
+    fn china_prefers_domestic_but_falls_back_when_unavailable() {
+        let mut probes = vec![probe("official", "海外", 10, true), probe("mirror", "国内", 100, true)];
+        assert_eq!(best_probe(&probes, "CN").unwrap().id, "mirror");
+        probes[1].ok = false;
+        assert_eq!(best_probe(&probes, "CN").unwrap().id, "official");
+        probes[0].ok = false;
+        assert!(best_probe(&probes, "CN").is_none());
+    }
+    #[test]
+    fn overseas_prefers_official_and_latency_breaks_ties() {
+        let probes = vec![probe("cn", "国内", 5, true), probe("slow", "海外", 100, true), probe("fast", "海外", 20, true)];
+        assert_eq!(best_probe(&probes, "US").unwrap().id, "fast");
+        assert_eq!(best_probe(&probes, "GLOBAL").unwrap().id, "fast");
+    }
+    #[test]
+    fn china_uses_available_relay_before_overseas() {
+        let probes = vec![probe("official", "海外", 20, true), probe("relay", "第三方", 100, true)];
+        assert_eq!(best_probe(&probes, "CN").unwrap().id, "relay");
+        assert_eq!(best_probe(&probes, "TW").unwrap().id, "official");
     }
 }

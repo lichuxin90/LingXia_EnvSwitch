@@ -9,19 +9,76 @@ use super::records::Registry;
 use super::tool::{Plugin, ShimTarget};
 use super::util;
 
+/// 终端命令行入口的名字，只出现在数据目录的 shims/ 里（文档与终端脚本都认它）。
 pub const SHIM_BIN_NAME: &str = if cfg!(windows) {
     "envswitch-shim.exe"
 } else {
     "envswitch-shim"
 };
 
-/// 生成 shim 用的模板二进制位置。
+/// 内嵌的转发模板：build.rs 把 stage-shim 编好的二进制路径递进来，编译期整个读进主程序。
+/// 发布包因此只需要一个 exe；这份字节在首次用到时释放到数据目录的 bin/ 下。
+/// 转发程序自己（shim feature）不内嵌：它不需要再带一份自己，否则每编一次体积就涨一截。
+#[cfg(not(feature = "shim"))]
+const SHIM_BLOB: &[u8] = include_bytes!(env!("ENVSWITCH_SHIM_BLOB"));
+#[cfg(feature = "shim")]
+const SHIM_BLOB: &[u8] = b"";
+
+/// 释放出来的模板叫这个：不跟主程序挤在同一个文件夹，也不叫 envswitch-shim，
+/// 免得两个长得很像的 exe 摆在一起让人分不清该点哪个。
+pub const FORWARD_STEM: &str = "envswitch-forward";
+
+fn forward_file_name() -> String {
+    format!(
+        "{FORWARD_STEM}{}",
+        if cfg!(windows) { ".exe" } else { "" }
+    )
+}
+
+/// 把内嵌的转发模板释放到数据目录的 bin/ 下，返回它的位置。
+/// 内容一致就不动文件；要换新版时先写临时文件再改名顶替——
+/// Windows 上正在运行的旧模板删不掉，改名让位后新文件才能占住原名。
+fn materialize() -> Result<PathBuf> {
+    let layout = paths::layout()?;
+    let dst = layout.bin.join(forward_file_name());
+    if std::fs::read(&dst).ok().as_deref() == Some(SHIM_BLOB) {
+        return Ok(dst);
+    }
+    std::fs::create_dir_all(&layout.bin)?;
+    let tmp = layout
+        .bin
+        .join(format!(".{FORWARD_STEM}-new-{}", util::timestamp()));
+    std::fs::write(&tmp, SHIM_BLOB)
+        .map_err(|e| Error::Io(format!("写 {} 失败：{e}", tmp.display())))?;
+    let _ = make_exec(&tmp);
+    if std::fs::rename(&tmp, &dst).is_err() {
+        // 顶替失败多半是旧模板正在运行：把它改名让位，再试一次。
+        let stale = dst.with_file_name(format!(
+            "{FORWARD_STEM}.old-{}{}",
+            util::timestamp(),
+            if cfg!(windows) { ".exe" } else { "" }
+        ));
+        if std::fs::rename(&dst, &stale).is_ok() {
+            let _ = std::fs::rename(&tmp, &dst);
+        }
+    }
+    if dst.is_file() {
+        let _ = std::fs::remove_file(&tmp);
+        return Ok(dst);
+    }
+    let _ = std::fs::remove_file(&tmp);
+    Err(Error::Io(format!(
+        "释放转发程序到 {} 失败",
+        dst.display()
+    )))
+}
+
+/// 转发用的模板二进制在哪。
 /// 它是控制端子系统的独立小程序，不能拿主程序顶替：Windows 上 GUI 程序没有控制台，
 /// 用它转发 `node -e "console.log(1)"` 会把输出丢掉。
 ///
-/// 安装包里它的名字带 target triple（tauri 的 externalBin 命名规则），位置也可能不在主程序旁边：
-/// macOS 进 `.app/Contents/Resources`，Linux 的 deb 与 AppImage 进 `lib/envswitch`。
-/// 所以按几个候选位置找，找到即用，别指望只有一种布局。
+/// 发布版把它内嵌在主程序里，这里释放到数据目录的 bin/ 下；
+/// 开发构建内嵌的可能是空占位，退回按老位置找 stage-shim 的产物。
 pub fn shim_bin() -> Result<PathBuf> {
     if let Ok(raw) = std::env::var(concat!("ENV", "SWITCH", "_SHIM_BIN")) {
         let p = PathBuf::from(raw.trim());
@@ -29,7 +86,22 @@ pub fn shim_bin() -> Result<PathBuf> {
             return Ok(p);
         }
     }
+    if SHIM_BLOB.len() > 1024 {
+        return materialize();
+    }
+    // 开发态兜底：主程序在 src-tauri/target/debug，stage-shim 的产物在 src-tauri/binaries。
     let exe = std::env::current_exe().map_err(|e| Error::Io(format!("认不出自己在哪：{e}")))?;
+    // 命令行副本自己就是可用的模板：shims/envswitch-shim.exe、bin/envswitch-forward.exe
+    // 被直接调去 shims sync 时，拿自己生成其余 shim 就行。
+    let stem = exe
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if (stem == "envswitch-shim" || stem == FORWARD_STEM)
+        && exe.metadata().map(|m| m.len() > 1024).unwrap_or(false)
+    {
+        return Ok(exe);
+    }
     let dir = exe.parent().ok_or_else(|| Error::Detail("程序路径不完整".to_string()))?;
 
     let mut names = vec![SHIM_BIN_NAME.to_string()];
@@ -41,13 +113,6 @@ pub fn shim_bin() -> Result<PathBuf> {
     }
 
     let mut dirs = vec![dir.to_path_buf()];
-    if let Some(parent) = dir.parent() {
-        dirs.push(parent.join("Resources"));
-        dirs.push(parent.join("lib").join("envswitch"));
-        dirs.push(parent.to_path_buf());
-    }
-    // 开发时主程序在 src-tauri/target/debug，而 stage-shim 的产物在 src-tauri/binaries，
-    // 上面几个候选都够不着；只有 debug 构建才回源码树看一眼，发布版不必带这个路径。
     if cfg!(debug_assertions) {
         dirs.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries"));
     }
@@ -55,17 +120,15 @@ pub fn shim_bin() -> Result<PathBuf> {
     for d in &dirs {
         for name in &names {
             let p = d.join(name);
-            // 打包前 build.rs 会在 src-tauri/binaries 里补一个空占位文件（见那里的注释），
-            // 所以带 triple 的那个候选必须真有点体积才算数，别把占位当成模板拿去生成 shim。
+            // 带 triple 的候选可能是 build.rs 补的空占位，必须真有点体积才算数。
             if p.is_file() && p.metadata().map(|m| m.len() > 1024).unwrap_or(false) {
                 return Ok(p);
             }
         }
     }
 
-    // 用主程序自己当模板不行（它没有控制台），但拿它的位置去找同级产物是可靠的。
     Err(Error::Detail(format!(
-        "找不到转发用的 {SHIM_BIN_NAME}；它必须和主程序放在同一个文件夹里，重新装一次或重新构建一次就好"
+        "找不到转发用的 {SHIM_BIN_NAME}；先跑 node scripts/stage-shim.mjs 再重新构建一次就好"
     )))
 }
 
@@ -160,6 +223,72 @@ pub fn sync_all() -> Result<Vec<ShimFile>> {
     Ok(out)
 }
 
+/// 只读检查，不因打开程序而生成转发文件。只检查已安装工具。
+/// 内置模板有更新时也需要补齐，避免旧命令行入口不认识新工具。
+pub fn missing() -> Result<Vec<String>> {
+    let layout = paths::layout()?;
+    let registry = Registry::load()?;
+    Ok(missing_in(&layout.bin, &layout.shims, &registry))
+}
+
+fn missing_in(bin: &Path, shims: &Path, registry: &Registry) -> Vec<String> {
+    let mut required = vec![shims.join(SHIM_BIN_NAME)];
+    if SHIM_BLOB.len() > 1024 { required.push(bin.join(forward_file_name())); }
+    for plugin in Plugin::all() {
+        if !registry.list(plugin.id()).is_empty() {
+            required.extend(plugin.shims().iter().map(|s| shim_path(shims, &s.name)));
+        }
+    }
+    required.into_iter().filter(|p| {
+        if SHIM_BLOB.len() > 1024 {
+            std::fs::read(p).ok().as_deref() != Some(SHIM_BLOB)
+        } else {
+            !p.metadata().map(|m| m.is_file() && m.len() > 1024).unwrap_or(false)
+        }
+    })
+        .map(|p| p.display().to_string()).collect()
+}
+
+#[cfg(test)]
+mod repair_tests {
+    use super::*;
+
+    #[test]
+    fn missing_check_is_read_only_and_ignores_uninstalled_tools() {
+        let root = std::env::temp_dir().join(format!("envswitch-shim-test-{}-{}", std::process::id(), util::timestamp()));
+        let bin = root.join("bin");
+        let shims = root.join("shims");
+        let registry = Registry::default();
+        assert!(!missing_in(&bin, &shims, &registry).is_empty());
+        assert!(!root.exists(), "只读检测不能生成目录或文件");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&shims).unwrap();
+        let fallback = vec![1; 2048];
+        let bytes = if SHIM_BLOB.len() > 1024 { SHIM_BLOB } else { &fallback };
+        std::fs::write(shims.join(SHIM_BIN_NAME), bytes).unwrap();
+        if SHIM_BLOB.len() > 1024 { std::fs::write(bin.join(forward_file_name()), bytes).unwrap(); }
+        assert!(missing_in(&bin, &shims, &registry).is_empty());
+        let mut installed = registry;
+        installed.put(super::super::records::Record { tool: ToolId::Deno, version: "2.0.0".into(), ..Default::default() });
+        let deno = shim_path(&shims, "deno");
+        assert_eq!(missing_in(&bin, &shims, &installed), vec![deno.display().to_string()]);
+        std::fs::write(&deno, bytes).unwrap();
+        assert!(missing_in(&bin, &shims, &installed).is_empty());
+        std::fs::write(&deno, b"broken").unwrap();
+        assert_eq!(missing_in(&bin, &shims, &installed), vec![deno.display().to_string()]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+/// 用户确认后一次补齐，失败时必须报告，不能返回伪成功。
+pub fn repair() -> Result<Vec<ShimFile>> {
+    ensure_cli_copy()?;
+    let files = sync_all()?;
+    let left = missing()?;
+    if !left.is_empty() { return Err(Error::Io(format!("以下转发文件仍不可用：{}", left.join("、")))); }
+    Ok(files)
+}
+
 pub fn list() -> Result<Vec<ShimFile>> {
     let layout = paths::layout()?;
     let mut out = Vec::new();
@@ -209,6 +338,9 @@ fn place(src: &Path, dst: &Path) -> Result<()> {
     if let Some(parent) = dst.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    if std::fs::read(dst).ok().zip(std::fs::read(src).ok()).is_some_and(|(a,b)| a == b) {
+        return Ok(());
+    }
     if dst.exists() {
         // Windows 上正在运行的 shim 删不掉，先改名让位，新文件占住原名。
         let tail = dst
@@ -222,8 +354,7 @@ fn place(src: &Path, dst: &Path) -> Result<()> {
             tail
         ));
         if std::fs::rename(dst, &stale).is_err() {
-            // 改名也失败说明它正被占用。旧模板功能一致，留着不用它，不算失败。
-            return Ok(());
+            return Err(Error::Io(format!("转发文件 {} 被占用，请关闭相关终端后重试", dst.display())));
         }
     }
     std::fs::hard_link(src, dst).or_else(|_| {
@@ -301,6 +432,7 @@ pub fn forward_for(
                 prefix_args: vec![script.to_string_lossy().to_string()],
             })
         }
+        ShimTarget::Args(prefix_args) => Ok(Forward { program: record.exec_path.clone(), prefix_args }),
         ShimTarget::Module(module) => Ok(Forward {
             program: record.exec_path.clone(),
             prefix_args: vec!["-m".to_string(), module],

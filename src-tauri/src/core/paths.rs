@@ -19,6 +19,8 @@ pub struct Layout {
     pub root: PathBuf,
     pub installs: PathBuf,
     pub shims: PathBuf,
+    /// 内嵌在主程序里的转发模板释放出来的位置，不跟主程序摆在一起。
+    pub bin: PathBuf,
     pub cache: PathBuf,
     pub partial: PathBuf,
     pub backups: PathBuf,
@@ -36,6 +38,7 @@ impl Layout {
         Self {
             installs: root.join("installs"),
             shims: root.join(SHIMS_DIR_NAME),
+            bin: root.join("bin"),
             cache: root.join("cache"),
             partial: root.join("cache").join("partial"),
             backups: root.join("backups"),
@@ -52,6 +55,7 @@ impl Layout {
             &self.root,
             &self.installs,
             &self.shims,
+            &self.bin,
             &self.cache,
             &self.partial,
             &self.backups,
@@ -100,7 +104,9 @@ pub struct Candidate {
 pub fn root_candidates() -> Vec<Candidate> {
     let mut out = Vec::new();
     let exe = exe_dir();
-    push_candidate(&mut out, "exe", exe.join(DATA_DIR_NAME), "程序同级".to_string(), 0, None);
+    // 程序自己在系统盘上时，"程序同级"就不再是推荐项：默认位置不能落在 C 盘。
+    let exe_rank = if on_system_drive(&exe) { 2 } else { 0 };
+    push_candidate(&mut out, "exe", exe.join(DATA_DIR_NAME), "程序同级".to_string(), exe_rank, None);
     if cfg!(windows) {
         for letter in b'D'..=b'Z' {
             let root = PathBuf::from(format!("{}:\\", letter as char));
@@ -162,6 +168,26 @@ pub fn exe_dir() -> PathBuf {
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// 系统盘盘符，Windows 上通常是 `C:`；别的平台没有盘符，给空串表示"不适用"。
+pub fn system_drive() -> String {
+    if cfg!(windows) {
+        std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string())
+    } else {
+        String::new()
+    }
+}
+
+pub fn on_system_drive(p: &Path) -> bool {
+    let drive = system_drive();
+    if drive.is_empty() {
+        return false;
+    }
+    let text = p.as_os_str().to_string_lossy();
+    text.get(..drive.len())
+        .map(|head| head.eq_ignore_ascii_case(&drive))
+        .unwrap_or(false)
 }
 
 fn location_file() -> PathBuf {
@@ -264,14 +290,17 @@ fn find_root() -> Option<(PathBuf, bool)> {
         return Some((p, false));
     }
     let beside = exe_dir().join(DATA_DIR_NAME);
-    if beside.is_dir() {
+    // 目录在不在不算数：浏览器内核会先在这儿建 webview 缓存，光看存在会把"还没选过位置"
+    // 读成"已经选好了"，首次向导就再也不出现。要看到 config/installs 才算真的用过。
+    if beside.join("config").is_dir() || beside.join("installs").is_dir() {
         return Some((beside, true));
     }
     if cfg!(debug_assertions) && let Some(project) = dev_project_root() {
         return Some((project.join(DATA_DIR_NAME), false));
     }
-    // exe 同级能写就用同级，这是"装完即用、零配置"的默认路径。
-    if beside.parent().map(can_write).unwrap_or(false) {
+    // exe 同级能写就用同级，这是"装完即用、零配置"的默认路径；系统盘不给这条默认，
+    // 必须让用户在向导里自己点头。
+    if !on_system_drive(&beside) && beside.parent().map(can_write).unwrap_or(false) {
         return Some((beside, true));
     }
     None

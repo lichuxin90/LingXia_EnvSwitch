@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WindowBar from "$lib/components/WindowBar.svelte";
   import {
     ArrowLeft,
     Bot,
@@ -6,6 +7,7 @@
     ChevronDown,
     FolderTree,
     Globe,
+    Terminal,
     House,
     Lock,
     LockOpen,
@@ -16,6 +18,7 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import Button from "$lib/components/Button.svelte";
   import JobDock from "$lib/components/JobDock.svelte";
+  import Modal from "$lib/components/Modal.svelte";
   import RuntimeIcon from "$lib/components/RuntimeIcon.svelte";
   import Switch from "$lib/components/Switch.svelte";
   import Tip from "$lib/components/Tip.svelte";
@@ -65,7 +68,7 @@
     const r = app.dirContext?.resolutions.find((x) => x.tool === tool);
     if (!r) return { text: "", tone: "idle", title: t("nav.booting") };
     if (!r.version)
-      return { text: "", tone: "bad", title: `${t("tool.notInstalledWord")}：${t("home.noneInstalled")}` };
+      return { text: "", tone: "idle", title: `${t("tool.notInstalledWord")}：${t("home.noneInstalled")}` };
     if (!r.execPath) return { text: r.version, tone: "warn", title: `${r.version}：${t("nav.statusBroken")}` };
     return {
       text: r.version,
@@ -74,25 +77,8 @@
     };
   }
 
-  /** 豆豆本体：绿档稳着亮，黄红两档带一圈雷达波，启动中是灰档慢呼吸。 */
   const dotCls: Record<RowStatus["tone"], string> = {
-    ok: "bg-success",
-    warn: "bg-warning",
-    bad: "bg-destructive",
-    idle: "bg-muted-foreground/60",
-  };
-  const dotHalo: Record<RowStatus["tone"], string> = {
-    ok: "",
-    warn: "bg-warning/45",
-    bad: "bg-destructive/40",
-    idle: "bg-muted-foreground/25",
-  };
-  /** 越要紧的状态跳得越快，灰档只是告诉人「还在读」。 */
-  const dotPulse: Record<RowStatus["tone"], string> = {
-    ok: "",
-    warn: "[animation-duration:2.2s]",
-    bad: "[animation-duration:1.6s]",
-    idle: "[animation-duration:3.2s]",
+    ok: "bg-success", warn: "bg-warning", bad: "bg-destructive", idle: "bg-muted-foreground/25",
   };
 
   let unsubs: (() => void)[] = [];
@@ -138,11 +124,16 @@
     };
   });
 
-  /** 设置浮层开着时，Esc 关掉它。 */
   $effect(() => {
-    if (!app.settingsOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") app.closeSettings();
+      if (e.key === "," && (e.ctrlKey || e.metaKey) && !e.altKey && app.ready && !app.danger) {
+        e.preventDefault();
+        app.settingsOpen = !app.settingsOpen;
+      }
+      if (e.key === "Escape") {
+        if (app.settingsOpen) app.closeSettings();
+        else app.select(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -187,23 +178,14 @@
 {#snippet statusDot(tool: ToolId)}
   {@const st = statusOf(tool)}
   {#if st.text}
-    <span class="mono shrink-0 text-[0.68rem] leading-none text-muted-foreground">{st.text}</span>
+    <span class="mono shrink-0 text-[11px] leading-none text-muted-foreground">{st.text}</span>
   {/if}
   <Tip text={st.title} class="shrink-0">
-    <span class="relative grid size-2.5 place-items-center">
-      {#if st.tone === "ok"}
-        <span class="absolute inset-0 rounded-full ring-2 ring-success/25" aria-hidden="true"></span>
-      {:else}
-        <span
-          class="absolute inset-0 animate-ping rounded-full {dotHalo[st.tone]} {dotPulse[st.tone]}"
-          aria-hidden="true"
-        ></span>
-      {/if}
-      <span class="relative size-2 rounded-full {dotCls[st.tone]}"></span>
-    </span>
+    <span class="block size-1.5 rounded-full {dotCls[st.tone]}"></span>
   </Tip>
 {/snippet}
 
+<WindowBar />
 {#if app.bootError}
   <div class="flex h-dvh items-center justify-center bg-background px-6">
     <div class="w-full max-w-2xl rounded-xl border border-border bg-card p-6 elevate">
@@ -248,108 +230,56 @@
 {:else if app.boot.needsSetup}
   <FirstRun />
 {:else}
-  <div class="flex h-dvh flex-col bg-background text-foreground">
+  <div class="desktop-root flex h-dvh flex-col text-foreground">
     <!-- 设置页盖上来时，侧边栏连同内容一起退出可访问性和点击。 -->
-    <div class="flex min-h-0 flex-1" inert={app.settingsOpen}>
-      <nav class="flex w-[17rem] shrink-0 flex-col border-r border-sidebar bg-sidebar">
-        <div class="flex items-center gap-1.5 px-3 py-3">
-          <button
-            type="button"
-            class="group flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            aria-label={t("app.openSite")}
-            onclick={() => void app.openLink(SITE_URL)}
-          >
-            <img src="/logo.png" alt="" class="size-8 shrink-0 rounded-lg object-contain" />
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-semibold">灵匣·EnvSwitch</span>
-              <span class="mono block truncate text-xs text-muted-foreground">v{app.boot.version}</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            class="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60
-              {app.settingsOpen ? 'bg-accent text-accent-foreground' : ''}"
-            title={t("app.openSettings")}
-            aria-label={t("app.openSettings")}
-            aria-haspopup="dialog"
-            aria-expanded={app.settingsOpen}
-            onclick={() => (app.settingsOpen = !app.settingsOpen)}
-          >
-            <Settings class="size-4" />
-          </button>
-        </div>
+    <div class="app-shell flex min-h-0 flex-1" inert={app.settingsOpen}>
+      <nav class="app-sidebar flex shrink-0 flex-col bg-sidebar" aria-label={t("nav.workspace")}>
+        <button type="button" class="sidebar-brand" title={t("window.website")} aria-label={t("window.website")} onclick={() => void app.openLink(SITE_URL)}>
+          <span class="brand-mark"><img src="/logo.svg" alt="" /></span>
+          <span class="sidebar-brand-name">EnvSwitch<small>灵匣 · Developer tools</small></span>
+        </button>
 
-        <ul class="mt-1 space-y-0.5 px-2">
-          {#each primary as item (item.view)}
-            {@const Icon = item.icon}
-            <li>
-              <button
-                type="button"
-                class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors
-                  {app.view === item.view
-                    ? 'bg-primary font-medium text-primary-foreground elevate'
-                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
-                aria-current={app.view === item.view ? "page" : undefined}
-                onclick={() => app.setView(item.view)}
-              >
-                <Icon class="size-4 shrink-0" />
-                <span class="min-w-0 flex-1 truncate text-left">{t(item.key)}</span>
-              </button>
-            </li>
-          {/each}
-        </ul>
+        <div class="sidebar-scroll">
+          <p class="nav-label mb-2 px-2.5">{t("nav.workspace")}</p>
+          <ul class="workspace-nav space-y-1">
+            {#each primary as item (item.view)}
+              {@const Icon = item.icon}
+              <li>
+                <button type="button"
+                  class="nav-row flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted {app.view === item.view ? 'font-medium' : 'text-muted-foreground hover:text-foreground'}"
+                  aria-current={app.view === item.view ? "page" : undefined}
+                  onclick={() => app.setView(item.view)}>
+                  <Icon class="size-4 shrink-0" strokeWidth={1.7} />
+                  <span class="min-w-0 flex-1 truncate text-left">{t(item.key)}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
 
-        <div class="mt-3 border-t border-border pt-3">
-          <p class="px-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">{t("nav.runtime")}</p>
-          <ul class="mt-1 space-y-0.5 px-2">
+          <p class="nav-label mt-7 mb-2 px-2.5">{t("nav.runtime")}</p>
+          <ul class="runtime-nav space-y-1">
             {#each NAV_TOOLS as tool (tool)}
               {@const active = isActive(tool)}
               {@const branches = branchOf[tool]}
               <li>
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors
-                    {active
-                      ? 'bg-primary font-medium text-primary-foreground elevate'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
+                <button type="button"
+                  class="nav-row flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted {active ? 'font-medium' : 'text-muted-foreground hover:text-foreground'}"
                   aria-current={active ? "page" : undefined}
-                  onclick={() => {
-                    if (branches) branchOpen = true;
-                    void app.setTool(tool);
-                  }}
-                >
-                  <RuntimeIcon {tool} class="size-4 shrink-0" />
+                  onclick={() => { if (branches) branchOpen = true; void app.setTool(tool); }}>
+                  <RuntimeIcon {tool} class="size-4 shrink-0 opacity-80" />
                   <span class="min-w-0 flex-1 truncate text-left">{TOOL_LABEL[tool]}</span>
                   {@render statusDot(tool)}
-                  {#if branches}
-                    <ChevronDown
-                      class="size-3.5 shrink-0 transition-transform {branchOpen ? '' : '-rotate-90'}"
-                      aria-hidden="true"
-                    />
-                  {/if}
+                  {#if branches}<ChevronDown class="size-3 shrink-0 {active && branchOpen ? '' : '-rotate-90'}" aria-hidden="true" />{/if}
                 </button>
-                {#if branches && branchOpen}
-                  <ul
-                    class="mt-0.5 mb-1 ml-[1.35rem] space-y-0.5 border-l border-border pl-2.5"
-                    aria-label={t("nav.branchExpand")}
-                  >
+                {#if branches && active && branchOpen}
+                  <ul class="my-1 ml-[17px] space-y-0.5 border-l border-border pl-3" aria-label={t("nav.branchExpand")}>
                     {#each branches as b (b.tool)}
                       {@const on = app.view === "tool" && app.tool === b.tool}
                       <li>
-                        <button
-                          type="button"
-                          class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors
-                            {on
-                              ? 'bg-accent font-medium text-accent-foreground'
-                              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'}"
-                          onclick={() => void app.setTool(b.tool)}
-                        >
-                          <span
-                            class="size-1.5 shrink-0 rounded-full {on ? 'bg-primary' : 'bg-border'}"
-                            aria-hidden="true"
-                          ></span>
+                        <button type="button"
+                          class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors {on ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+                          onclick={() => void app.setTool(b.tool)}>
                           <span class="min-w-0 flex-1 truncate text-left">{t(b.key)}</span>
-                          {@render statusDot(b.tool)}
                         </button>
                       </li>
                     {/each}
@@ -358,28 +288,34 @@
               </li>
             {/each}
           </ul>
+
+          <div class="manager-nav">
+          <button type="button" class="nav-row flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-current={app.view === "env" ? "page" : undefined} onclick={() => app.setView("env")}>
+            <Terminal class="size-4" strokeWidth={1.7} />{t("nav.env")}
+          </button>
+          <button type="button" class="nav-row flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-current={app.view === "mirror" ? "page" : undefined} onclick={() => app.setView("mirror")}>
+            <Globe class="size-4" strokeWidth={1.7} />{t("nav.mirror")}
+          </button>
+          </div>
         </div>
 
-        <div class="mt-auto space-y-2 px-3 py-3">
-          <div class="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1.5">
-            {#if app.settings?.lockGlobal}
-              <Lock class="size-3.5 shrink-0 text-warning" />
-            {:else}
-              <LockOpen class="size-3.5 shrink-0 text-success" />
-            {/if}
-            <span class="min-w-0 flex-1 text-xs leading-snug text-muted-foreground">
-              {app.settings?.lockGlobal ? t("nav.lockedOn") : t("nav.lockedOff")}
-            </span>
-            <Switch
-              label={t("nav.lockSwitch")}
-              checked={app.settings?.lockGlobal ?? false}
-              onchange={(next) => void app.patch({ lockGlobal: next })}
-            />
+        <div class="sidebar-footer shrink-0">
+          <div class="lock-row flex items-center gap-2" title={app.settings?.lockGlobal ? t("nav.lockedOn") : t("nav.lockedOff")}>
+            {#if app.settings?.lockGlobal}<Lock class="size-3.5 shrink-0 text-muted-foreground" />
+            {:else}<LockOpen class="size-3.5 shrink-0 text-muted-foreground" />{/if}
+            <span class="lock-label min-w-0 flex-1 text-xs text-muted-foreground">{t("nav.lockSwitch")}</span>
+            <Switch label={t("nav.lockSwitch")} checked={app.settings?.lockGlobal ?? false} onchange={(next) => void app.patch({ lockGlobal: next })} />
           </div>
+          <button type="button" class="settings-link flex w-full items-center gap-2 rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-haspopup="dialog" aria-expanded={app.settingsOpen} onclick={() => app.settingsOpen = true}>
+            <Settings class="size-4" strokeWidth={1.7} /><span class="flex-1 text-left">{t("nav.settings")}</span><kbd>Ctrl ,</kbd>
+          </button>
         </div>
       </nav>
 
-      <main class="relative flex min-w-0 flex-1 flex-col">
+      <main class="app-main relative flex min-w-0 flex-1 flex-col">
         <div class="min-h-0 flex-1">
           {#if app.view === "home"}
             <HomeView />
@@ -402,7 +338,7 @@
       </main>
 
       {#if app.selected && app.view === "tool"}
-        <div class="w-80 shrink-0">
+        <div class="detail-shell shrink-0">
           <DetailView />
         </div>
       {/if}
@@ -412,7 +348,7 @@
       <!-- 设置整页盖住整个窗口，侧边栏也在它底下：窗口本来就不大，还留一条栏只会有两块地方要读。
            底下那层整套退出可访问性和点击，模态框不该让人穿过去点中后面的按钮。 -->
       <div
-        class="fixed inset-0 z-30 flex flex-col bg-background"
+        class="settings-window fixed z-30 flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-label={t("nav.settings")}
@@ -430,6 +366,17 @@
       </div>
     {/if}
   </div>
+{/if}
+
+{#if app.danger}
+  {@const ask = app.danger}
+  <Modal title={ask.title} tone={ask.tone ?? "danger"} onclose={() => app.answerDanger(false)}>
+    <p class="whitespace-pre-line text-muted-foreground">{ask.body}</p>
+    {#snippet footer()}
+      <Button size="sm" variant="outline" onclick={() => app.answerDanger(false)}>{t("common.cancel")}</Button>
+      <Button size="sm" variant={ask.tone === "default" ? "default" : "danger"} onclick={() => app.answerDanger(true)}>{ask.confirm}</Button>
+    {/snippet}
+  </Modal>
 {/if}
 
 <Toasts />

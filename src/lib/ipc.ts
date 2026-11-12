@@ -30,6 +30,8 @@ import type {
   Settings,
   ShimFile,
   SourceInfo,
+  PackageProbe,
+  PackageSource,
   Switched,
   ToolId,
   TransferSummary,
@@ -52,6 +54,8 @@ export function messageOf(e: unknown): string {
 }
 
 export const api = {
+  openSystemUninstall: () => invoke<void>("open_system_uninstall"),
+  sourceRegion: () => invoke<string>("source_region"),
   boot: () => invoke<Boot>("boot"),
   chooseDataRoot: (dir: string) => invoke<Layout>("choose_data_root", { dir }),
   dataRootCandidates: () => invoke<DataRootCandidate[]>("data_root_candidates"),
@@ -62,6 +66,8 @@ export const api = {
     invoke<VersionPage>("list_versions", { tool, refresh, source: source ?? null }),
   sourcesOf: (tool: ToolId) => invoke<SourceInfo[]>("sources_of", { tool }),
   probeSources: (tool: ToolId) => invoke<MirrorProbe[]>("probe_sources", { tool }),
+  packageSources: (manager: string) => invoke<PackageSource[]>("package_sources", { manager }),
+  probePackageSources: (manager: string) => invoke<PackageProbe[]>("probe_package_sources", { manager }),
   installedVersions: (tool: ToolId, dir?: string | null) =>
     invoke<InstalledPage>("installed_versions", { tool, dir: dir ?? null }),
 
@@ -99,6 +105,7 @@ export const api = {
   pathView: () => invoke<PathView>("path_view"),
 
   shimList: () => invoke<ShimFile[]>("shim_list"),
+  shimMissing: () => invoke<string[]>("shim_missing"),
   shimSync: () => invoke<ShimFile[]>("shim_sync"),
 
   envScan: () => invoke<ScanReport>("env_scan"),
@@ -114,6 +121,7 @@ export const api = {
     invoke<ProjectLock | null>("unlock_project", { dir, tool }),
   registeredProjects: () => invoke<ProjectLock[]>("registered_projects"),
   forgetProject: (dir: string) => invoke<void>("forget_project", { dir }),
+  rememberProjectDir: (dir: string | null) => invoke<void>("remember_project_dir", { dir }),
   setWatchDir: (dir: string | null) => invoke<void>("set_watch_dir", { dir }),
   setGlobalLock: (locked: boolean) => invoke<void>("set_global_lock", { locked }),
 
@@ -129,6 +137,7 @@ export const api = {
     invoke<ImportOutcome>("import_config", { src, applySettings }),
   configSuggestedName: () => invoke<string>("config_suggested_name"),
 
+  repoStars: () => invoke<number>("repo_stars"),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   aiDetect: () => invoke<AiClient[]>("ai_detect"),
   /** 写我们自己的独立规则文件：`head` 是客户端硬要求的文件头部，没有就传空串。 */

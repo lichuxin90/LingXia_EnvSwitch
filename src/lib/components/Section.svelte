@@ -46,7 +46,7 @@
 <!-- Clean Admin 的分区卡：1px 边框负责分隔，阴影只留一层极淡的落地。 -->
 <section
   class={cn(
-    "rounded-lg border border-border bg-card elevate",
+    "ui-section rounded-lg border border-border bg-card",
     dense ? "p-4" : "p-5",
     className,
   )}
@@ -64,7 +64,7 @@
             <Icon class="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
           {/if}
           <span class="min-w-0 flex-1">
-            {#if title}<span class="block text-base font-semibold">{title}</span>{/if}
+            {#if title}<span class="block text-sm font-semibold">{title}</span>{/if}
             {#if desc}
               <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{desc}</span>
             {/if}
@@ -75,7 +75,7 @@
         {#if Icon}
           <Icon class="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
         {/if}
-        {#if title}<h3 class="min-w-0 text-base font-semibold">{title}</h3>{/if}
+        {#if title}<h3 class="min-w-0 text-sm font-semibold">{title}</h3>{/if}
         {#if desc}<Hint text={desc} />{/if}
         <span class="min-w-0 flex-1"></span>
       {/if}

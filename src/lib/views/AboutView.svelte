@@ -63,7 +63,6 @@
             {#each Object.keys(TOOL_LABEL) as code (code)}
               <Badge tone="outline">{t("about.supported", { tool: TOOL_LABEL[code as "node"] })}</Badge>
             {/each}
-            <Badge tone="neutral">{t("about.planned")}</Badge>
           </div>
         </div>
       </div>

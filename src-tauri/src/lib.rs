@@ -105,9 +105,13 @@ fn serve() -> tauri::Result<tauri::App> {
             data_root_candidates,
             reveal_path,
             open_link,
+            open_system_uninstall,
+            source_region,
             list_versions,
             sources_of,
             probe_sources,
+            package_sources,
+            probe_package_sources,
             installed_versions,
             install_version,
             import_offline,
@@ -129,6 +133,7 @@ fn serve() -> tauri::Result<tauri::App> {
             path_restore,
             shim_list,
             shim_sync,
+            shim_missing,
             env_scan,
             path_view,
             hook_status,
@@ -138,6 +143,7 @@ fn serve() -> tauri::Result<tauri::App> {
             unlock_project,
             registered_projects,
             forget_project,
+            remember_project_dir,
             set_watch_dir,
             set_global_lock,
             pick_folder,
@@ -149,6 +155,7 @@ fn serve() -> tauri::Result<tauri::App> {
             import_config,
             config_suggested_name,
             check_update,
+            repo_stars,
             ai_detect,
             ai_write_file,
             ai_remove_file,
@@ -160,13 +167,12 @@ fn serve() -> tauri::Result<tauri::App> {
         ])
         .setup(|app| {
             build_tray(app)?;
-            // 数据目录已就绪就把转发文件补齐：换过机器或挪过目录都不会留下半套 shim。
-            if paths::layout().is_ok() {
-                let _ = shim::sync_all();
+            // 持久化偏好为准：首次默认开启，明确关闭后不再重新开启。
+            if let Ok(settings) = Settings::load() {
+                if let Err(e) = apply_autostart(app.handle(), settings.autostart) {
+                    guardian::note(&format!("应用开机启动设置失败：{e}"));
+                }
             }
-            // 启动项里还登记着别的路径（挪过安装位置、或老版本没带 --guard），按现在这个文件重写。
-            // 开机时静默打不开是最难发现的问题，宁可每次启动都核对一遍。
-            let _ = core::autostart::refresh_if_stale();
             make_main(app)?;
             Ok(())
         })
@@ -205,6 +211,7 @@ fn make_main(app: &tauri::App) -> tauri::Result<()> {
         .inner_size(w, h)
         .min_inner_size(min_w, min_h)
         .resizable(true)
+        .decorations(false)
         // 成品不给开发者工具：右键菜单里的"检查"和 F12 一起关掉，开发构建照常留着。
         .devtools(cfg!(debug_assertions))
         .center();
@@ -497,6 +504,8 @@ struct Boot {
     jobs: Vec<JobView>,
     hooks: Vec<HookStatus>,
     shims: Vec<ShimFile>,
+    /// 系统盘盘符（Windows 上是 `C:` 这种）；界面靠它判断要不要先弹危险确认。
+    system_drive: String,
     /// 首屏提示语：数据目录没选好、终端集成没开，直接写在这里。
     note: Option<String>,
 }
@@ -526,6 +535,7 @@ fn boot() -> Boot {
         note,
         layout,
         settings,
+        system_drive: paths::system_drive(),
     }
 }
 
@@ -551,14 +561,17 @@ fn data_root_candidates() -> Vec<paths::Candidate> {
 }
 
 #[tauri::command]
-fn choose_data_root(dir: String) -> Result<Layout> {
+fn choose_data_root(app: AppHandle, dir: String) -> Result<Layout> {
     let path = PathBuf::from(dir.trim().trim_matches('"'));
     if path.as_os_str().is_empty() {
         return Err(Error::Detail("请先填一个文件夹路径".to_string()));
     }
     let layout = paths::adopt_root(&path)?;
-    let _ = shim::sync_all();
-    let _ = hook::refresh_scripts();
+    let settings = Settings::load()?;
+    apply_autostart(&app, settings.autostart)?;
+    settings.save()?;
+    // 转发文件齐全时保留目录迁移后的终端脚本刷新；缺失时留给界面确认补齐。
+    if shim::missing()?.is_empty() { let _ = hook::refresh_scripts(); }
     Ok(layout)
 }
 
@@ -579,6 +592,23 @@ fn open_link(app: AppHandle, url: String) -> Result<()> {
         .open_url(url, None::<&str>)
         .map_err(|e| Error::Detail(format!("打不开链接：{e}")))
 }
+
+#[tauri::command]
+fn open_system_uninstall() -> Result<()> {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg("ms-settings:appsfeatures")
+            .spawn()
+            .map_err(|e| Error::Detail(format!("无法打开已安装的应用：{e}")))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    { Err(Error::Detail("请通过系统软件管理器卸载原有环境".into())) }
+}
+
+#[tauri::command]
+fn source_region() -> String { mirror::system_region() }
 
 // ---------------------------------------------------------------- 版本清单
 
@@ -634,6 +664,16 @@ async fn probe_sources(tool: ToolId) -> Result<Vec<MirrorProbe>> {
     Ok(mirror::probe_sources(&client, &plugin).await)
 }
 
+#[tauri::command]
+fn package_sources(manager: String) -> Vec<core::package_sources::PackageSource> {
+    core::package_sources::sources(&manager)
+}
+
+#[tauri::command]
+async fn probe_package_sources(manager: String) -> Result<Vec<core::package_sources::PackageProbe>> {
+    core::package_sources::refresh_auto(&manager).await
+}
+
 // ---------------------------------------------------------------- 安装与卸载
 
 #[derive(Debug, Clone, Serialize)]
@@ -646,22 +686,33 @@ struct InstalledPage {
 }
 
 #[tauri::command]
-fn installed_versions(tool: ToolId, dir: Option<String>) -> Result<InstalledPage> {
-    let settings = Settings::load()?;
-    let registry = Registry::load()?;
-    let cwd = dir_of(dir);
-    Ok(InstalledPage {
-        tool,
-        versions: install::installed(tool)?,
-        default_version: registry.default_of(tool),
-        resolution: toolversions::resolve_with(&settings, &registry, tool, &cwd),
+async fn installed_versions(tool: ToolId, dir: Option<String>) -> Result<InstalledPage> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let settings = Settings::load()?;
+        let registry = Registry::load()?;
+        let cwd = dir_of(dir);
+        Ok(InstalledPage {
+            tool,
+            versions: install::installed(tool)?,
+            default_version: registry.default_of(tool),
+            resolution: toolversions::resolve_with(&settings, &registry, tool, &cwd),
+        })
     })
+    .await
+    .map_err(|e| Error::Detail(format!("读取已安装环境失败：{e}")))?
 }
 
 fn dir_of(dir: Option<String>) -> PathBuf {
     dir.filter(|d| !d.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+        .or_else(|| {
+            Settings::load()
+                .ok()
+                .and_then(|s| s.last_project_dir)
+                .filter(|d| !d.trim().is_empty())
+                .map(PathBuf::from)
+        })
+        .unwrap_or_default()
 }
 
 fn emitter(app: &AppHandle) -> Arc<dyn Fn(&JobEvent) + Send + Sync + 'static> {
@@ -847,7 +898,11 @@ fn switch_version(tool: ToolId, version: String) -> Result<Switched> {
     let note = install::switch_default(tool, &version)?;
     let settings = Settings::load()?;
     let registry = Registry::load()?;
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let cwd = settings
+        .last_project_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_default();
     Ok(Switched {
         tool,
         version,
@@ -875,6 +930,7 @@ fn get_settings() -> Result<Settings> {
 
 #[tauri::command]
 fn update_settings(app: AppHandle, patch: Settings) -> Result<Settings> {
+    core::package_sources::validate(&patch)?;
     let old = Settings::load().unwrap_or_default();
     patch.save()?;
     if old.path_scope != patch.path_scope {
@@ -981,14 +1037,23 @@ fn shim_list() -> Result<Vec<ShimFile>> {
 
 #[tauri::command]
 fn shim_sync() -> Result<Vec<ShimFile>> {
-    shim::sync_all()
+    let files = shim::repair()?;
+    let _ = hook::refresh_scripts();
+    Ok(files)
+}
+
+#[tauri::command]
+fn shim_missing() -> Result<Vec<String>> {
+    shim::missing()
 }
 
 // ---------------------------------------------------------------- 体检与终端集成
 
 #[tauri::command]
-fn env_scan() -> Result<ScanReport> {
-    detect::scan()
+async fn env_scan() -> Result<ScanReport> {
+    tauri::async_runtime::spawn_blocking(detect::scan)
+        .await
+        .map_err(|e| Error::Detail(format!("环境检测任务失败：{e}")))?
 }
 
 #[tauri::command]
@@ -1028,12 +1093,20 @@ struct DirContext {
 fn dir_resolution(dir: Option<String>) -> Result<DirContext> {
     let settings = Settings::load()?;
     let registry = Registry::load()?;
+    // 没选过目录就留空，绝不拿进程的工作目录顶上：图形界面从资源管理器或守护进程拉起时，
+    // 那是 C:\Windows\system32，跟用户的项目毫无关系。
     let raw = dir
         .filter(|d| !d.trim().is_empty())
         .map(PathBuf::from)
-        .or_else(|| settings.last_project_dir.as_ref().map(PathBuf::from))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    let exists = raw.is_dir();
+        .or_else(|| {
+            settings
+                .last_project_dir
+                .as_ref()
+                .filter(|d| !d.trim().is_empty())
+                .map(PathBuf::from)
+        })
+        .unwrap_or_default();
+    let exists = !raw.as_os_str().is_empty() && raw.is_dir();
     let lock = if exists {
         toolversions::read_project(&raw)?
     } else {
@@ -1100,7 +1173,33 @@ fn registered_projects() -> Result<Vec<ProjectLock>> {
 
 #[tauri::command]
 fn forget_project(dir: String) -> Result<()> {
-    toolversions::unregister_project(Path::new(&dir))
+    let path = PathBuf::from(&dir);
+    toolversions::unregister_project(&path)?;
+    // 取消登记的就是界面正在看的那个目录时，把记住的目录一并清掉，
+    // 否则"当前项目调用的版本和环境"还挂着一条已经取消登记的目录。
+    let mut s = Settings::load()?;
+    let same = s
+        .last_project_dir
+        .as_ref()
+        .map(|d| paths::norm_eq(Path::new(d), &path))
+        .unwrap_or(false);
+    if same {
+        s.last_project_dir = None;
+        s.save()?;
+    }
+    Ok(())
+}
+
+/// 界面选中项目目录后落盘：下次开程序还认这个目录。
+#[tauri::command]
+fn remember_project_dir(dir: Option<String>) -> Result<()> {
+    let next = dir.filter(|d| !d.trim().is_empty());
+    let mut s = Settings::load()?;
+    if s.last_project_dir == next {
+        return Ok(());
+    }
+    s.last_project_dir = next;
+    s.save()
 }
 
 /// 盯住某个项目目录：版本声明一变就通知界面，配合托盘常驻用。
@@ -1234,6 +1333,11 @@ fn import_config(src: String, apply_settings: Option<bool>) -> Result<transfer::
 }
 
 // ---------------------------------------------------------------- 检查更新与 AI 客户端
+
+#[tauri::command]
+async fn repo_stars() -> Result<u64> {
+    update::stars().await
+}
 
 #[tauri::command]
 async fn check_update() -> Result<update::UpdateInfo> {

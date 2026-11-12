@@ -7,6 +7,24 @@
 
 ---
 
+## [0.1.8] - 2026-11-12
+
+0.1.4 到 0.1.7 只在本地编过，没发过包，改动一起算进这一版。
+
+- 运行时加到八个：PHP、MySQL、Bun、Deno 能装能切能转发。MySQL 只装程序，不初始化数据目录，也不跑迁移。
+- 包仓库源独立成设置：PyPI、npm / Bun、Composer、Deno npm、JSR，国内镜像备了一批。首次使用并发测速，按包元数据能不能真响应挑最快的，结果缓存六小时；可以重测、手动指定、填自定义地址，测失败的源不参与自动选择。经 EnvSwitch 转发的 pip、npm / npx、bun / bunx、composer、deno 会带上选好的源。Composer 只改仓库地址，认证和其余配置不动，第一次改全局配置前备份原文件。
+- 下载源页按运行时收拢：安装包源和对应的依赖仓库源在同一块里切，底部独立的包管理器区和说明删掉。MySQL 只留官方 Windows 源，以前选过归档镜像的自动改成官方。
+- 界面重做：去掉系统标题栏，拖动、双击最大化、最小化、关闭自己画；首页不堆运行时卡片，Star 数和一键检测放显眼位置；侧栏加宽、菜单放大。版本清单改列表，切运行时立即响应，读过的清单走缓存，过期响应丢掉不覆盖新结果。
+- 首页和环境页认本机已有的环境：可以纳管，也可以看卸载重装指引。本地环境卡片加刷新检测，手动删掉或卸载过的不会再显示成已装。
+- 设置改整窗浮层，左上角返回；浮层里的下载源、环境与终端、关于点完留在浮层内，不再跳回主界面。Ctrl+, 开设置，Esc 返回。
+- AI 客户端页：运行时逐行写清这一版是项目声明给的、全局默认给的、还是本机只装了这一版；项目目录不再兜底成 system32，选过的目录重启还在，取消登记就清空；往 C 盘放项目目录先弹危险确认，点了确认才写。给 AI 的规则片段默认摊开，「这套调用方式怎么工作」收进左上角问号按钮，点开是弹窗。
+- 发布包收成一个 exe：转发程序编译期内嵌进主程序，启动时释放到数据目录 bin/envswitch-forward.exe，不跟主程序摆在一起；终端里的 envswitch-shim.exe 只存在于数据目录的 shims 下。Windows 免安装包同样只有一个 exe，流水线逐字节核对内嵌的是不是刚编出来的那份。
+- 自动选下载源按系统地区走：中国大陆优先国内镜像，其他地区优先官方；并发限时测速，手动设置和失败回退保留。
+- 首次使用默认开开机启动，以前手动关过的保持关。使用前检查转发文件，缺失或损坏时确认后从内置恢复。
+- 修：切过下载源后复用旧版本清单；复制安装目录时嵌套目录被展开；JSR 测速把 Deno 不支持的重定向算成可用。
+
+---
+
 ## [0.1.0] - 2026-10-30
 
 首个公开版本。一台电脑上的 Node.js / Python / Go / PyPy 只装一份，由图形界面统一托管，
@@ -41,6 +59,24 @@
 ---
 
 ## English
+
+### [0.1.8] - 2026-11-12
+
+0.1.4 through 0.1.7 were only built locally and never shipped; their changes are folded into this release.
+
+- Eight runtimes now: PHP, MySQL, Bun and Deno can be installed, switched and forwarded. MySQL installs the server only; no data directory init, no migrations.
+- Separate registry settings for PyPI, npm / Bun, Composer, Deno npm and JSR, with a set of China mirrors. First use probes them in parallel and picks the fastest one that actually answers package metadata, cached for six hours; re-probe, manual pick and custom URLs are supported, and failed sources stay out of automatic selection. pip, npm / npx, bun / bunx, composer and deno forwarded through EnvSwitch use the chosen registry. Composer keeps auth and other config; the original global config is backed up before the first change.
+- Mirror page grouped per runtime: the archive source and its dependency registries switch in one place; the standalone registry block at the bottom is gone. MySQL keeps only the official Windows source; old archive selections migrate automatically.
+- UI redo: system title bar removed in favor of custom drag, double-click maximize, minimize and close; home no longer stacks runtime cards, star count and the one-click check sit up top; wider sidebar with larger menu entries. Version lists are plain lists, runtime switches respond immediately from cache, and stale responses are dropped instead of overwriting newer ones.
+- Home and environment pages recognize existing local installs: adopt them, or read the uninstall/reinstall guide. Local cards got a refresh check, so manually deleted or uninstalled runtimes stop showing as installed.
+- Settings is a full-window overlay with a back button top left; the mirror, environment and about entries stay inside the overlay instead of jumping back to the main view. Ctrl+, opens it, Esc closes.
+- AI client page: each runtime row says whether its version comes from the project declaration, the global default, or the only install on the machine; the project dir no longer falls back to system32, survives restarts, and clears when you unregister; picking a C: drive dir asks for explicit confirmation first. The AI rules snippet is expanded by default; "how this works" moved into a question-mark button top left that opens a modal.
+- One exe per package: the forwarder is embedded at compile time and extracted on startup to bin/envswitch-forward.exe inside the data dir, never next to the main exe; envswitch-shim.exe for terminals lives only under the data dir's shims. The Windows portable zip is a single exe too, and CI byte-checks that the embedded blob is the freshly built one.
+- Automatic binary mirror choice follows the system region: China mirrors first in mainland China, official elsewhere; timed parallel probes, manual override and fallback kept.
+- Autostart defaults on for first run and stays off if you turned it off before. The forwarder is checked before use and restored from the built-in copy after confirmation if missing or broken.
+- Fixes: stale version catalogs after switching download source; nested directories expanded when copying an install dir; JSR probes counting Deno-unsupported redirects as usable.
+
+---
 
 ### [0.1.0] - 2026-10-30
 

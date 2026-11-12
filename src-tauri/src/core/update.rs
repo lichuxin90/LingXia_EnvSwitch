@@ -20,6 +20,7 @@ pub struct UpdateInfo {
     pub current: String,
     pub latest: String,
     pub title: String,
+    pub notes: String,
     pub has_update: bool,
     pub url: String,
 }
@@ -77,7 +78,23 @@ pub async fn check() -> Result<UpdateInfo> {
         current: VERSION.to_string(),
         latest: tag,
         title,
+        notes: text(&body, "body"),
         has_update,
         url,
     })
+}
+
+/// 公共仓库 Star 数，短时间切换首页/关于不重复占用 GitHub API 配额。
+pub async fn stars() -> Result<u64> {
+    use std::{sync::Mutex, time::{Duration, Instant}};
+    static CACHE: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+    if let Some((_, count)) = CACHE.lock().ok().and_then(|g| *g).filter(|(at,_)| at.elapsed() < Duration::from_secs(600)) {
+        return Ok(count);
+    }
+    let client = probe_client(&Settings::load()?)?;
+    let body: serde_json::Value = client.get(format!("https://api.github.com/repos/{REPO}"))
+        .header("Accept", "application/vnd.github+json").send().await?.error_for_status()?.json().await?;
+    let count = body["stargazers_count"].as_u64().ok_or_else(|| Error::Detail("仓库未返回 Star 数量".into()))?;
+    if let Ok(mut cache) = CACHE.lock() { *cache = Some((Instant::now(), count)); }
+    Ok(count)
 }

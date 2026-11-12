@@ -1,24 +1,13 @@
 <script lang="ts">
-  import {
-    Boxes,
-    CircleCheck,
-    Gauge,
-    Radar,
-    RefreshCw,
-    Wand,
-    Wrench,
-  } from "@lucide/svelte";
-  import Badge from "$lib/components/Badge.svelte";
+  import { onMount } from "svelte";
+  import { ArrowUpRight, CircleCheck, FolderTree, HardDrive, Radar, RefreshCw, ShieldCheck, Terminal, Wand } from "@lucide/svelte";
   import Button from "$lib/components/Button.svelte";
-  import Counter from "$lib/components/Counter.svelte";
-  import Hint from "$lib/components/Hint.svelte";
   import RepoActions from "$lib/components/RepoActions.svelte";
-  import RuntimeIcon from "$lib/components/RuntimeIcon.svelte";
-  import Section from "$lib/components/Section.svelte";
+  import ExternalRuntimes from "$lib/components/ExternalRuntimes.svelte";
   import { api } from "$lib/ipc";
-  import { t, type MsgKey } from "$lib/i18n/store.svelte";
+  import { t } from "$lib/i18n/store.svelte";
   import { app } from "$lib/state.svelte";
-  import { ALL_TOOLS, TOOL_LABEL, humanBytes } from "$lib/utils";
+  import { ALL_TOOLS, TOOL_LABEL, SITE_URL } from "$lib/utils";
   import type { InstalledPage, ToolId } from "$lib/types";
 
   type Tone = "ok" | "warn" | "bad";
@@ -35,16 +24,13 @@
   }
 
   /** 检测结果缓存：下次进首页直接显示上次的现场，不必再扫一遍机器。 */
-  const CACHE_KEY = "envswitch.home.check.v1";
+  const CACHE_KEY = "envswitch.home.check.v2";
 
   interface Cache {
     at: number;
     conflicts: number;
     perTool: Record<ToolId, InstalledPage>;
   }
-
-  /** 进度条最短走这么久：真活往往一秒内干完，一闪而过让人以为没在检。 */
-  const MIN_MS = 2400;
 
   let perTool = $state<Record<ToolId, InstalledPage> | null>(null);
   let checking = $state(false);
@@ -96,52 +82,43 @@
     checkedAt = cached.at;
   }
 
-  /** 真扫描：PATH、终端集成、每个工具的已装版本。 */
-  async function scan(): Promise<void> {
+  onMount(() => { if (!app.scan) void app.refreshEnv(); });
+
+  /** 进度按完成的本地检查推进，不添加人为等待。 */
+  async function scan(): Promise<boolean> {
+    let completed = 0;
+    const advance = () => { progress = Math.round(++completed / (ALL_TOOLS.length + 2) * 100); };
     try {
-      await Promise.all([app.refreshEnv(), app.refreshDir(app.dirContext?.dir ?? null)]);
-      const dir = app.dirContext?.dir ?? null;
-      const pages = await Promise.all(ALL_TOOLS.map((tool) => api.installedVersions(tool, dir)));
+      const [envOk] = await Promise.all([app.refreshEnv().then((ok) => { advance(); return ok; }), app.refreshDir(app.dirContext?.dir ?? null).then(advance)]);
+      if (!envOk) return false;
+      const pages = await Promise.all(ALL_TOOLS.map(async (tool) => {
+        const page = await api.installedVersions(tool, app.dirContext?.dir ?? null);
+        advance();
+        return page;
+      }));
       perTool = Object.fromEntries(ALL_TOOLS.map((tool, i) => [tool, pages[i]])) as Record<ToolId, InstalledPage>;
+      return true;
     } catch (e) {
       app.fail(e, t("msg.envScanFailed"));
+      return false;
     }
   }
 
-  /** 把进度推到 99% 等真活干完；剩下的 1% 和收尾一起给。 */
-  function runProgress(): Promise<void> {
-    progress = 0;
-    const started = Date.now();
-    return new Promise((resolve) => {
-      const step = () => {
-        const el = Date.now() - started;
-        progress = Math.min(99, Math.round((el / MIN_MS) * 100));
-        if (el >= MIN_MS) resolve();
-        else requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    });
-  }
-
   async function startCheck(): Promise<void> {
-    if (checking) return;
+    if (checking || optimizing) return;
     checking = true;
-    const work = scan();
-    const anim = runProgress();
-    await Promise.all([work, anim]);
-    progress = 100;
-    // 100% 停半拍再切结果页，不然进度条永远看不到终点。
-    await new Promise((r) => setTimeout(r, 320));
-    checking = false;
-    writeCache();
+    progress = 0;
+    try { if (await scan()) writeCache(); }
+    finally { checking = false; }
   }
 
-  /** 只在点按钮时扫描；进页面读缓存，不偷偷体检。 */
-  const stage = $derived(checking ? "checking" : perTool ? "done" : "idle");
+  /** 完整体检由按钮触发；后台只读已有环境，及时展示接管入口。 */
+  const stage = $derived(checking ? "checking" : perTool && checkedAt ? "done" : "idle");
 
   const scope = $derived(app.settings?.pathScope ?? "user");
   const activePath = $derived(app.paths.find((p) => p.scope === scope) ?? app.paths[0] ?? null);
-  const missingShims = $derived((app.boot?.shims ?? []).filter((s) => !s.exists));
+  const requiredShims = $derived((app.boot?.shims ?? []).filter((s) => s.tool && (perTool?.[s.tool]?.versions.length ?? 0) > 0));
+  const missingShims = $derived(requiredShims.filter((s) => !s.exists));
   const brokenRecords = $derived(
     Object.entries(perTool ?? {}).flatMap(([tool, page]) =>
       page.versions.filter((v) => !v.usable).map((v) => ({ tool: tool as ToolId, version: v.version })),
@@ -186,7 +163,7 @@
         tone: "bad",
         detail: t("home.check.pathDetail", { scope: scope === "system" ? t("home.scopeWhole") : t("home.scopeUser") }),
         fixLabel: t("home.check.pathFix"),
-        fix: () => app.pathApply(scope),
+        fix: async () => { if (!await app.ensureForwarding()) throw new Error(t("home.configureHint")); await api.pathApply(scope); },
       });
     } else if (app.settings?.shimPriority && !activePath.isFirst) {
       out.push({
@@ -220,7 +197,7 @@
         tone: "bad",
         detail: t("home.check.shimNoneDetail"),
         fixLabel: t("home.check.shimNoneFix"),
-        fix: () => app.shimSync(),
+        fix: async () => { const shims = await api.shimSync(); if (app.boot) app.boot.shims = shims; },
       });
     } else if (missingShims.length) {
       out.push({
@@ -229,12 +206,12 @@
         tone: "warn",
         detail: t("home.check.shimMissingDetail", { names: missingShims.map((s) => s.name).join(sep) }),
         fixLabel: t("env.shimSync"),
-        fix: () => app.shimSync(),
+        fix: async () => { const shims = await api.shimSync(); if (app.boot) app.boot.shims = shims; },
       });
     } else {
       out.push({
         id: "shim-ok",
-        title: t("home.check.shimOkTitle", { n: app.boot?.shims.length ?? 0 }),
+        title: t("home.check.shimOkTitle", { n: requiredShims.length }),
         tone: "ok",
         detail: t("home.check.shimOkDetail"),
       });
@@ -248,7 +225,8 @@
         detail: t("home.check.hookDetail", { names: hooksToEnable.map((h) => h.label).join(sep) }),
         fixLabel: t("home.check.hookFix"),
         fix: async () => {
-          for (const h of hooksToEnable) await app.hookToggle(h.shell, true);
+          if (!await app.ensureForwarding()) throw new Error(t("home.configureHint"));
+          for (const h of hooksToEnable) await api.hookSet(h.shell, true);
         },
       });
     } else if (app.hooks.some((h) => h.installed)) {
@@ -276,9 +254,7 @@
           names: brokenRecords.map((b) => `${TOOL_LABEL[b.tool]} ${b.version}`).join(sep),
         }),
         fixLabel: t("home.check.brokenFix"),
-        fix: async () => {
-          for (const b of brokenRecords) await app.uninstall(b.version, false, b.tool);
-        },
+
       });
     }
 
@@ -305,103 +281,16 @@
   const problems = $derived(checks.filter((c) => c.tone !== "ok"));
   const passed = $derived(checks.filter((c) => c.tone === "ok"));
 
-  /** 每条体检项归到哪一组：大盘按组给结论，明细列表也靠它标行。 */
-  const groupOf: Record<string, MsgKey> = {
-    root: "home.groupStorage",
-    "root-ok": "home.groupStorage",
-    "path-read": "home.groupEntry",
-    path: "home.groupEntry",
-    order: "home.groupEntry",
-    "path-ok": "home.groupEntry",
-    "shim-none": "home.groupEntry",
-    shim: "home.groupEntry",
-    "shim-ok": "home.groupEntry",
-    hook: "home.groupHook",
-    "hook-ok": "home.groupHook",
-    "hook-none": "home.groupHook",
-    broken: "home.groupRecord",
-    conflict: "home.groupRecord",
-    "conflict-ok": "home.groupRecord",
-  };
-  const groupOrder: MsgKey[] = [
-    "home.groupStorage",
-    "home.groupEntry",
-    "home.groupHook",
-    "home.groupRecord",
-  ];
-
-  const groups = $derived(
-    groupOrder
-      .map((key) => {
-        const items = checks.filter((c) => groupOf[c.id] === key);
-        return { key, total: items.length, done: items.filter((c) => c.tone === "ok").length };
-      })
-      .filter((g) => g.total),
-  );
-
-  const okCount = $derived(passed.length);
-  const score = $derived(checks.length ? Math.round((okCount / checks.length) * 100) : 100);
-  /** 明细列表每行都标出属于哪一组，扫的时候一眼能对上大盘里的四块。 */
-  function groupLabel(id: string): MsgKey {
-    return groupOf[id] ?? "home.groupRecord";
-  }
-  /** 一圈的周长，配合 stroke-dashoffset 把进度画成弧。 */
-  const RING = 2 * Math.PI * 52;
-  /** 这一圈只报进度，不报警：没配满就是蓝，配满了转绿。 */
-  const ringCls = $derived(score === 100 ? "stroke-success" : "stroke-primary");
-  const scoreLine = $derived(problems.length ? t("home.optimizeLeft", { n: problems.length }) : t("home.healthy"));
-  /** 总分下面那句解释收进气泡，页面只留结论和按钮。 */
-  const scoreNote = $derived(
-    fixable.length ? t("home.fixableNote", { n: fixable.length }) : problems.length ? t("home.manualNote") : t("home.allGoodNote"),
-  );
-
-  /** 结果页刚换上来时圆环从 0 转到得分，不然它一挂载就是终态，没有"转上去"这一下。 */
-  let ringIn = $state(false);
-  $effect(() => {
-    if (stage === "done") {
-      ringIn = false;
-      const id = requestAnimationFrame(() => (ringIn = true));
-      return () => cancelAnimationFrame(id);
-    }
-    ringIn = false;
-  });
-
   const timeText = $derived(checkedAt ? new Date(checkedAt).toLocaleString() : "");
-
-  /** 左栏那三格小数据。 */
-  const stats = $derived<[string, number][]>([
-    [t("home.statItems"), checks.length],
-    [t("home.statTodo"), problems.length],
-    [t("home.statFix"), fixable.length],
-  ]);
-
-  /**
-   * 右栏下面那片空白用四行真数据填上：体检说配置缺什么，这一栏说本机到底装了什么。
-   * 条的长短是「可用版本 / 全部记录」，坏记录越多条越短，和右边那两个数字对得上。
-   */
-  const runtimeRows = $derived(
-    ALL_TOOLS.map((tool) => {
-      const page = perTool?.[tool];
-      const versions = page?.versions ?? [];
-      const usable = versions.filter((v) => v.usable).length;
-      const bytes = versions.reduce((sum, v) => sum + (v.sizeBytes ?? 0), 0);
-      return {
-        tool,
-        total: versions.length,
-        usable,
-        bytes,
-        current: page?.resolution.version ?? page?.defaultVersion ?? null,
-        pct: versions.length ? Math.round((usable / versions.length) * 100) : 0,
-      };
-    }),
-  );
-
   async function optimize(): Promise<void> {
     if (!fixable.length) {
       app.toast(t("home.optimizeAllDone"), "ok");
       return;
     }
     optimizing = true;
+    try {
+      if (!await app.ensureForwarding()) { optimizing = false; return; }
+    } catch (e) { optimizing = false; app.fail(e); return; }
     const done: string[] = [];
     const failed: string[] = [];
     for (const c of fixable) {
@@ -423,262 +312,105 @@
   }
 </script>
 
-<div class="flex h-full flex-col overflow-y-auto">
-  <header class="flex items-center gap-3 border-b border-border px-6 py-4">
-    <h2 class="text-base font-semibold">{t("nav.home")}</h2>
-    <Hint text={t("home.tagline")} />
-  </header>
-
-  <div class="space-y-5 px-6 py-5">
-    <!-- Star 区置顶：进首页第一眼是它，体检和配置都排在后面。 -->
-    <div class="rounded-lg border border-primary/25 bg-detail p-5 elevate-hi">
-      <RepoActions />
-    </div>
-
-    {#if stage === "idle"}
-      <!-- 没体检过：中间只放一颗按钮，不去偷偷扫机器。 -->
-      <div class="flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-14 text-center elevate">
-        <span class="relative grid size-14 place-items-center rounded-full bg-primary/10">
-          <Radar class="size-6 text-primary" />
-        </span>
-        <div>
-          <p class="text-sm font-semibold">{t("home.detectTitle")}</p>
-          <p class="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">{t("home.detectDesc")}</p>
+<div class="home-view flex h-full flex-col overflow-y-auto">
+  <header class="home-header"><div><span class="header-kicker">WORKSPACE</span><h2>{t("home.workspaceTitle")}</h2></div><span class="mono header-version">v{app.boot?.version}</span></header>
+  <div class="home-content">
+    <section class="welcome-banner">
+      <button type="button" class="logo-scene" aria-label={t("window.website")} title={t("window.website")} onclick={() => void app.openLink(SITE_URL)}>
+        <span class="logo-grid"></span>
+        <img class="hero-logo" src="/logo.svg" alt="灵匣 EnvSwitch" />
+        <svg class="logo-sparkles" viewBox="0 0 240 200" fill="none" aria-hidden="true"><path d="M37 39v12m-6-6h12M204 127v10m-5-5h10" stroke="currentColor" stroke-width="1.5"/><path d="m191 37 4 7-4 7-4-7Z" fill="currentColor"/><circle cx="48" cy="150" r="3" stroke="currentColor"/></svg>
+        <span class="logo-caption">BUILD YOUR NEXT IDEA</span>
+      </button>
+      <div class="welcome-copy"><span class="welcome-eyebrow">OPEN SOURCE · MADE FOR DEVELOPERS</span><RepoActions /></div>
+    </section>
+    <section class="scan-card glass-card overflow-hidden" aria-label={t("home.scanTitle")}>
+      <div class="flex flex-wrap items-center gap-3 px-5 py-4">
+        <span class="scan-icon"><ShieldCheck class="size-5" strokeWidth={1.6} /></span>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-sm font-semibold">{t("home.scanTitle")}</h2>
+          <p class="mt-1 text-xs text-muted-foreground">{stage === "done" ? t("home.checkedAt", { time: timeText }) : t("home.detectDesc")}</p>
         </div>
-        <Button onclick={() => void startCheck()}>
-          <Radar class="size-4" />
-          {t("home.detectBtn")}
+        {#if stage === "done"}
+          <span class="text-xs {problems.length ? 'text-warning' : 'text-success'}">{problems.length ? t("home.todoPanel", { n: problems.length }) : t("home.healthy")}</span>
+        {/if}
+        <Button variant="outline" disabled={optimizing || checking || stage !== "done" || !fixable.length} title={stage !== "done" ? t("home.configureHint") : undefined} onclick={() => void optimize()}><Wand class="size-4" />{optimizing ? t("home.optimizing") : t("home.configure")}</Button>
+        <Button variant="default" disabled={checking || optimizing} onclick={() => void startCheck()}>
+          {#if checking}<RefreshCw class="size-3.5 animate-spin" />{:else}<Radar class="size-3.5" />{/if}
+          {checking ? t("home.scanning") : stage === "done" ? t("home.recheck") : t("home.detectBtn")}
         </Button>
       </div>
-    {:else if stage === "checking"}
-      <div class="flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-14 text-center elevate">
-        <span class="relative grid size-14 place-items-center rounded-full bg-primary/10">
-          <span class="absolute inset-0 rounded-full bg-primary/15 animate-ping [animation-duration:1.8s]" aria-hidden="true"></span>
-          <Radar class="relative size-6 text-primary animate-spin [animation-duration:2.4s]" />
-        </span>
-        <p class="text-sm font-semibold">{t("home.scanning")}</p>
-
-        <div class="w-full max-w-md">
-          <div class="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-            <span
-              class="block h-full rounded-full bg-primary transition-[width] duration-150 ease-linear"
-              style="width:{progress}%"
-            ></span>
+      {#if checking}
+        <div class="border-t border-border px-5 py-4">
+          <div class="h-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={t("home.scanning")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+            <span class="block h-full bg-primary transition-[width] duration-150" style="width:{progress}%"></span>
           </div>
-          <p class="mono mt-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{phase}</span>
-            <span class="tabular-nums">{progress}%</span>
-          </p>
+          <p class="mt-2 flex justify-between text-xs text-muted-foreground"><span>{phase}</span><span class="mono">{progress}%</span></p>
         </div>
-
-        <ul class="mt-1 flex items-center gap-2" aria-hidden="true">
-          {#each phases as p, i (p)}
-            <span
-              class="size-1.5 rounded-full transition-colors duration-200
-                {progress >= (i + 1) * 25 ? 'bg-primary' : 'bg-border'}"
-            ></span>
-          {/each}
-        </ul>
-        <p class="max-w-md text-xs leading-relaxed text-muted-foreground">{t("home.detectFoot")}</p>
-      </div>
-    {:else}
-      <!-- 优化大盘：左边一圈进度给总分，右边按分组显示哪几块还没配满。 -->
-      <div class="rounded-lg border border-border bg-card p-5 elevate">
-        <div class="grid gap-6 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
-          <div class="flex flex-col items-center gap-3">
-            <div class="relative grid size-40 place-items-center">
-              <svg viewBox="0 0 120 120" class="absolute inset-0 size-full -rotate-90" aria-hidden="true">
-                <circle cx="60" cy="60" r="52" fill="none" stroke-width="9" class="stroke-border" />
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="52"
-                  fill="none"
-                  stroke-width="9"
-                  stroke-linecap="round"
-                  stroke-dasharray={RING}
-                  stroke-dashoffset={ringIn ? RING * (1 - score / 100) : RING}
-                  class="{ringCls} transition-[stroke-dashoffset] duration-[900ms] ease-out"
-                />
-              </svg>
-              <div class="text-center">
-                <p class="text-3xl leading-none font-semibold tabular-nums">
-                  <Counter value={score} />
-                  {#if ringIn}<span class="text-base text-muted-foreground">%</span>{/if}
-                </p>
-                <p class="mt-1 text-xs text-muted-foreground">{t("home.scoreLabel")}</p>
-              </div>
-            </div>
-            <p class="text-center text-sm font-medium {problems.length ? "text-foreground" : "text-success"}">
-              {scoreLine}
-            </p>
-            <p class="mono flex items-center gap-1.5 text-xs text-muted-foreground">
-              {t("home.checkCount", { total: checks.length, ok: okCount })}
-              <Hint text={scoreNote} />
-            </p>
-
-            <!-- 三格小数据：把原来空着的左栏下半部填上，数字上来先归零再数到位。 -->
-            <ul class="grid w-full grid-cols-3 gap-2 text-center">
-              {#each stats as [word, n] (word)}
-                <li class="rounded-lg border border-border bg-detail px-1 py-2">
-                  <p class="text-base leading-none font-semibold tabular-nums"><Counter value={n} /></p>
-                  <p class="mt-1 text-[11px] leading-none text-muted-foreground">{word}</p>
-                </li>
-              {/each}
-            </ul>
-
-            <!-- 两颗按钮等宽并排：一宽一窄还换行，看着就是没对齐。 -->
-            <div class="grid w-full grid-cols-2 gap-2">
-              <Button size="sm" onclick={() => void optimize()} disabled={!fixable.length || optimizing}>
-                <Wand class="size-3.5" />
-                {optimizing ? t("home.optimizing") : t("home.optimize")}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!brokenRecords.length}
-                onclick={() => {
-                  app.setView("env");
-                  app.toast(t("home.conflictJump"), "info", 7000);
-                }}
-              >
-                <Wrench class="size-3.5" />
-                {t("home.conflictBtn")}
-              </Button>
-            </div>
-
-            <!-- 重新检测挪到这里：结果就在眼前，按钮不该跑页头去。 -->
-            <div class="flex w-full items-center justify-between gap-2 border-t border-border pt-3">
-              <span class="mono min-w-0 truncate text-[11px] text-muted-foreground" title={timeText}>
-                {timeText ? t("home.checkedAt", { time: timeText }) : t("home.neverChecked")}
-              </span>
-              <Button size="sm" variant="ghost" onclick={() => void startCheck()}>
-                <RefreshCw class="size-3.5" />
-                {t("home.recheck")}
-              </Button>
-            </div>
-          </div>
-
-          <div class="flex min-w-0 flex-col gap-3">
-            <div class="flex items-center gap-2">
-              <Gauge class="size-4 shrink-0 text-primary" aria-hidden="true" />
-              <p class="text-sm font-semibold">{t("home.scanTitle")}</p>
-              <Hint text={t("home.scanDesc")} />
-            </div>
-            <ul class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {#each groups as g (g.key)}
-                <li class="flex flex-col gap-1.5 rounded-lg border border-border px-3 py-2.5 text-xs">
-                  <span class="flex items-center gap-2">
-                    {#if g.done === g.total}
-                      <CircleCheck class="size-3.5 shrink-0 text-success" />
-                    {:else}
-                      <Wand class="size-3.5 shrink-0 text-primary" />
-                    {/if}
-                    <span class="min-w-0 flex-1 font-medium">{t(g.key)}</span>
-                    <span class="mono shrink-0 tabular-nums text-muted-foreground"><Counter value={g.done} />/{g.total}</span>
-                  </span>
-                  <span class="h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                    <span
-                      class="block h-full rounded-full {g.done === g.total ? "bg-success" : "bg-primary"} transition-[width] duration-700 ease-out"
-                      style="width:{(g.done / g.total) * 100}%"
-                    ></span>
-                  </span>
-                </li>
-              {/each}
-            </ul>
-
-            <!-- 体检说配置缺什么，这一栏说本机装了什么：紧贴四块进度卡，默认窗口高度下不用滚动就能看到。 -->
-            <div class="rounded-xl border border-border bg-detail px-4 py-3">
-              <div class="flex items-center gap-2">
-                <Boxes class="size-4 shrink-0 text-primary" aria-hidden="true" />
-                <p class="text-sm font-semibold">{t("home.runtimeTitle")}</p>
-                <Hint text={t("home.runtimeDesc")} />
-              </div>
-              <ul class="mt-2.5 grid gap-x-6 gap-y-2.5 sm:grid-cols-2">
-                {#each runtimeRows as row, i (row.tool)}
-                  <li class="flex min-w-0 flex-col gap-1">
-                    <span class="flex items-center gap-2 text-xs">
-                      <RuntimeIcon tool={row.tool} class="size-4 shrink-0" />
-                      <span class="min-w-0 flex-1 font-medium">{TOOL_LABEL[row.tool]}</span>
-                      <!-- 等宽只给版本号对齐用；「还没装」这类词塞进 mono 字体里，片假名会被拉成一格一个字。 -->
-                      <span class="shrink-0 tabular-nums {row.current ? "mono" : "text-muted-foreground"}">
-                        {row.current
-                          ? t("home.inUseWord", { v: row.current })
-                          : row.total
-                            ? t("home.notSet")
-                            : t("home.noneShort")}
-                      </span>
-                    </span>
-                    <span class="flex items-center gap-2">
-                      <span class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                        <span
-                          class="block h-full rounded-full {row.usable === row.total ? "bg-success" : "bg-warning"} transition-[width] duration-700 ease-out"
-                          style="width:{ringIn ? row.pct : 0}%; transition-delay:{i * 90}ms"
-                        ></span>
-                      </span>
-                      <span class="flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-                        <span>{t("home.versionCountLine", { n: row.total, bytes: humanBytes(row.bytes) })}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{t("home.usableOf", { ok: row.usable, total: row.total })}</span>
-                      </span>
-                    </span>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-
-            <!-- 待处理明细挪进右栏：四块进度卡下面原来是一整片空白，要翻到卡片外面才看得到事项。 -->
-            {#if problems.length}
-              <p class="mt-1 text-sm font-semibold">{t("home.todoPanel", { n: problems.length })}</p>
-              <ul class="space-y-2">
-                {#each problems as c (c.id)}
-                  <li class="flex flex-wrap items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs">
-                    <span class="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10">
-                      <Wand class="size-4 text-primary" />
-                    </span>
-                    <div class="min-w-0 flex-1">
-                      <p class="flex flex-wrap items-center gap-2 text-sm font-medium">
-                        {c.title}
-                        <Badge tone="accent">{t("home.todoState")}</Badge>
-                        <Badge tone="outline">{t(groupLabel(c.id))}</Badge>
-                      </p>
-                      <p class="mt-0.5 leading-relaxed text-muted-foreground">{c.detail}</p>
-                    </div>
-                    {#if c.fix}
-                      <Button size="sm" variant="outline" disabled={optimizing} onclick={() => void c.fix?.()}>
-                        {c.fixLabel ?? t("home.fixThis")}
-                      </Button>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {:else}
-              <p class="flex items-center gap-2 rounded-xl border border-success/30 bg-success/8 px-4 py-3 text-sm">
-                <CircleCheck class="size-4 shrink-0 text-success" />
-                {t("home.healthy")}
-              </p>
-            {/if}
-            <p class="mt-auto pt-1 text-xs leading-relaxed text-muted-foreground">{t("home.optimizeFoot")}</p>
-          </div>
-        </div>
-      </div>
-
-      {#if passed.length}
-        <Section title={t("home.donePanel", { n: passed.length })} icon={CircleCheck} collapsible>
-          <ul class="space-y-2">
-            {#each passed as c (c.id)}
-              <li class="flex flex-wrap items-start gap-3 rounded-xl border border-border bg-detail px-4 py-2.5 text-xs">
-                <CircleCheck class="mt-0.5 size-4 shrink-0 text-success" />
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-medium">{c.title}</p>
-                  <p class="mt-0.5 leading-relaxed text-muted-foreground">{c.detail}</p>
-                </div>
-                <Badge tone="outline">{t(groupLabel(c.id))}</Badge>
+      {:else if stage === "done"}
+        {#if problems.length}
+          <ul class="divide-y divide-border border-t border-border">
+            {#each problems as c (c.id)}
+              <li class="flex flex-wrap items-center gap-3 px-5 py-3.5">
+                <span class="size-1.5 shrink-0 rounded-full {c.tone === 'bad' ? 'bg-destructive' : 'bg-warning'}"></span>
+                <div class="min-w-0 flex-1"><p class="text-sm">{c.title}</p><p class="mt-1 text-xs leading-relaxed text-muted-foreground">{c.detail}</p></div>
+                {#if c.fix}<Button size="sm" variant="outline" disabled={optimizing} onclick={async () => { try { await c.fix?.(); await startCheck(); } catch (e) { app.fail(e); } }}>{c.fixLabel ?? t("home.fixThis")}</Button>{/if}
               </li>
             {/each}
           </ul>
-        </Section>
+        {/if}
+        {#if passed.length}
+          <details class="border-t border-border px-5 py-3">
+            <summary class="cursor-pointer text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t("home.donePanel", { n: passed.length })}</summary>
+            <ul class="mt-3 space-y-3">
+              {#each passed as c (c.id)}
+                <li class="flex items-start gap-2.5"><CircleCheck class="mt-0.5 size-3.5 shrink-0 text-success" /><div><p class="text-xs">{c.title}</p><p class="mt-1 text-xs text-muted-foreground">{c.detail}</p></div></li>
+              {/each}
+            </ul>
+          </details>
+        {/if}
+      {:else}
+        <div class="flex flex-wrap gap-x-6 gap-y-2 border-t border-border bg-white/10 px-5 py-3 text-xs text-muted-foreground">
+          <span>PATH</span><span>{t("home.groupEntry")}</span><span>{t("home.groupHook")}</span><span>{t("home.groupRecord")}</span>
+        </div>
       {/if}
-    {/if}
+    </section>
+    <ExternalRuntimes />
+    <div class="quick-grid">
+      <button type="button" class="quick-card" onclick={() => app.setView("project")}><span class="quick-icon"><FolderTree size={20} strokeWidth={1.5} /></span><span><strong>{t("home.projectQuickTitle")}</strong><small>{t("home.projectQuickHint")}</small></span><ArrowUpRight size={17} /></button>
+      <button type="button" class="quick-card" onclick={() => app.setView("env")}><span class="quick-icon"><Terminal size={20} strokeWidth={1.5} /></span><span><strong>{t("home.terminalQuickTitle")}</strong><small>{t(activePath?.installed ? "home.pathReady" : "home.pathPending")}</small></span><ArrowUpRight size={17} /></button>
+    </div>
+    <div class="workspace-location"><HardDrive size={14} /><span>{t("nav.dataDir")}</span><button type="button" class="mono" title={app.boot?.layout?.root} onclick={() => void app.revealPath(app.boot?.layout?.root ?? null)}>{app.boot?.layout?.root}</button><ShieldCheck size={14} /></div>
   </div>
 </div>
+
+<style>
+  .home-header { min-height: 77px !important; display: flex; align-items: center; padding: 12px 32px; gap: 15px; border: 0; }
+  .home-header > div { display: flex; align-items: center; gap: 12px; } .home-header h2 { font-size: 15px !important; font-weight: 600; }
+  .header-kicker { font-size: 9px; letter-spacing: 1.6px; color: var(--muted-foreground); border-right: 1px solid var(--border); padding-right: 12px; }
+  .header-version { margin-left: auto; font-size: 11px; color: var(--muted-foreground); }
+  .home-content { width: 100%; max-width: 1300px; margin: 0 auto; padding: 0 32px 25px; display: flex; flex-direction: column; gap: 18px; }
+  .welcome-banner { display: grid; grid-template-columns: 210px minmax(0,1fr); min-height: 230px; border-radius: 22px; border: 1px solid var(--glass-stroke); background: linear-gradient(115deg,#ffffffb5,#e7efff8c 60%,#ede9ffa3); position: relative; overflow: hidden; }
+  .welcome-banner::after { content: ''; pointer-events: none; position: absolute; width: 240px; height: 240px; border-radius: 50%; right: -120px; top: -130px; border: 35px solid #ffffff30; }
+  .welcome-copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 26px 30px 26px 12px; }
+  .welcome-eyebrow { font-size: 9px; letter-spacing: 1.8px; color: #7990b4; margin-bottom: 14px; }
+  .logo-scene { position: relative; display: grid; align-content: center; justify-items: center; isolation: isolate; }
+  .logo-grid { position: absolute; inset: 24px 10px; opacity: .35; background-image: linear-gradient(#a7bbdf40 1px,transparent 1px),linear-gradient(90deg,#a7bbdf40 1px,transparent 1px); background-size: 24px 24px; mask-image: radial-gradient(ellipse,#000,transparent 70%); z-index: -1; }
+  .hero-logo { width: 160px; height: 160px; object-fit: contain; animation: logo-float 6s ease-in-out infinite; filter: drop-shadow(0 12px 12px #6c88b91a); }
+  .logo-sparkles { position: absolute; inset: 10px 0; width: 100%; height: 180px; color: #89a7d9; animation: sparkle 5s ease-in-out infinite; }
+  .logo-caption { font-size: 8px; letter-spacing: 1.8px; color: #8297b7; margin-top: 6px; }
+  .glass-card { border: 1px solid var(--glass-stroke); border-radius: 18px; background: var(--card); box-shadow: var(--glass-shadow); }
+  .scan-card { border-top: 2px solid #95b5f0; }
+  .scan-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: var(--accent); color: var(--primary); }
+  .scan-card :global(.ui-button) { min-height: 36px; }
+  .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .quick-card { display: flex; text-align: left; align-items: center; gap: 13px; border: 1px solid var(--glass-stroke); border-radius: 16px; padding: 20px; background: var(--card); transition: transform .2s, box-shadow .2s; }
+  .quick-card:hover { transform: translateY(-2px); box-shadow: var(--glass-shadow); } .quick-icon { color: var(--primary); display: flex; } .quick-card > span:nth-child(2) { flex: 1; min-width: 0; }
+  .quick-card strong { display: block; font-size: 13px; font-weight: 550; } .quick-card small { display: block; margin-top: 6px; font-size: 11px; color: var(--muted-foreground); } .quick-card > :global(svg) { color: var(--muted-foreground); }
+  .workspace-location { display: flex; gap: 8px; align-items: center; color: var(--muted-foreground); font-size: 10px; padding: 3px 0; } .workspace-location button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; } .workspace-location > :global(svg:last-child) { margin-left: auto; flex-shrink: 0; }
+  :global(.dark) .welcome-banner { background: linear-gradient(115deg,#263a55c9,#283758a8,#333959a3); } :global(.dark) .hero-logo { filter: invert(.85) brightness(1.7) drop-shadow(0 12px 12px #0002); }
+  @keyframes logo-float { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-7px) rotate(2deg); } }
+  @keyframes sparkle { 0%,100% { opacity: .35; transform: translateY(0); } 50% { opacity: .85; transform: translateY(-4px); } }
+  @media(max-width:1050px) { .home-content { padding: 0 24px 20px; gap: 15px; } .home-header { padding-inline: 24px; } .welcome-banner { grid-template-columns: 170px minmax(0,1fr); } .hero-logo { width: 140px; height: 140px; } .welcome-copy { padding-right: 22px; } }
+  @media(prefers-reduced-motion:reduce) { .hero-logo,.logo-sparkles { animation: none; } }
+</style>

@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    BookOpen,
     Bot,
     Boxes,
     Copy,
@@ -10,13 +9,13 @@
     Plus,
     Radar,
     RefreshCw,
-    ScrollText,
     Terminal,
     Trash,
   } from "@lucide/svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Button from "$lib/components/Button.svelte";
   import Hint from "$lib/components/Hint.svelte";
+  import Modal from "$lib/components/Modal.svelte";
   import Section from "$lib/components/Section.svelte";
   import { api } from "$lib/ipc";
   import { t } from "$lib/i18n/store.svelte";
@@ -29,10 +28,9 @@
     envswitchFile,
     fileNameOf,
     joinDir,
-    resolutionLabel,
     TOOL_LABEL,
   } from "$lib/utils";
-  import type { AiClient, ProjectLock, ToolId } from "$lib/types";
+  import type { AiClient, ProjectLock, Resolution, ToolId } from "$lib/types";
 
   /** 给 AI 看的规则片段：核心是「别自己下运行时，用本机这套」。 */
   const RULES = $derived(t("ai.rules"));
@@ -55,6 +53,8 @@
   let locks = $state<ProjectLock[]>([]);
   let loading = $state(false);
   let registered = $state(false);
+  /** 「这套调用方式怎么工作」收进左上角问号里，点一下才弹出来。 */
+  let howOpen = $state(false);
 
   async function reload(): Promise<void> {
     loading = true;
@@ -81,6 +81,26 @@
   );
   const lockEntries = $derived(app.dirContext?.lock?.entries ?? {});
   const howSteps = $derived([t("ai.how1"), t("ai.how2"), t("ai.how3"), t("ai.how4")]);
+
+  /** 这一行的版本是谁给的：项目里那行声明，还是这台电脑的全局默认。 */
+  const SOURCE_WORD = {
+    projectFile: "ai.srcProject",
+    globalDefault: "ai.srcGlobal",
+    onlyInstalled: "ai.srcOnly",
+    none: "ai.srcNone",
+  } as const;
+
+  function sourceWord(res: Resolution | null): string {
+    return res ? t(SOURCE_WORD[res.source]) : t("ai.srcNone");
+  }
+
+  function sourceDetail(res: Resolution | null, tool: ToolId): string {
+    const name = TOOL_LABEL[tool];
+    if (!res || res.source === "none") return t("ai.srcNoneDetail", { tool: name });
+    if (res.source === "projectFile") return t("ai.srcProjectDetail", { file: res.foundIn ?? ".tool-versions" });
+    if (res.source === "onlyInstalled") return t("ai.srcOnlyDetail", { tool: name });
+    return dir ? t("ai.srcGlobalDetail", { tool: name }) : t("ai.srcGlobalNoDir", { tool: name });
+  }
 
   /** 把当前解析出来的版本写进项目声明，AI 生成的项目就此固定环境。 */
   async function declareHere(): Promise<void> {
@@ -112,7 +132,7 @@
 
   async function forget(path: string): Promise<void> {
     try {
-      await api.forgetProject(path);
+      await app.forgetProject(path);
       await reload();
       app.toast(t("ai.forgotOne"), "ok", 6000);
     } catch (e) {
@@ -121,14 +141,8 @@
   }
 
   async function pickAndDeclare(): Promise<void> {
-    try {
-      const picked = await api.pickFolder();
-      if (!picked) return;
-      await app.refreshDir(picked);
-      app.toast(t("ai.pickedDir", { dir: picked }), "info", 7000);
-    } catch (e) {
-      app.fail(e, t("ai.pickFailed"));
-    }
+    const picked = await app.pickProjectDir();
+    if (picked) app.toast(t("ai.pickedDir", { dir: picked }), "info", 7000);
   }
 
   // ---------------------------------------------------------------- 本机客户端检测与一键导入
@@ -350,16 +364,33 @@
   </header>
 
   <div class="space-y-5 px-6 py-5">
-    <Section title={t("ai.howTitle")} desc={t("ai.howDesc")} icon={BookOpen} collapsible>
-      <ol class="space-y-1 text-xs leading-relaxed text-muted-foreground">
-        {#each howSteps as line (line)}
-          <li>
-            {#each segs(line) as seg}
-              {#if seg.code}<span class="mono">{seg.text}</span>{:else}{seg.text}{/if}
-            {/each}
-          </li>
-        {/each}
-      </ol>
+    <!-- 规则片段是这页的主角，进来就摊开；工作原理收进左上角那个问号，想看再点。 -->
+    <Section>
+      <div class="mb-3 flex items-start gap-2">
+        <button
+          type="button"
+          class="mt-0.5 shrink-0 rounded-full text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          title={t("ai.howTitle")}
+          aria-label={t("ai.howTitle")}
+          aria-haspopup="dialog"
+          onclick={() => (howOpen = true)}
+        >
+          <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9.25" />
+            <path d="M9.2 9.1a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4" />
+            <path d="M12 17.4h.01" />
+          </svg>
+        </button>
+        <div class="min-w-0 flex-1">
+          <h3 class="text-base font-semibold">{t("ai.rulesTitle")}</h3>
+          <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">{t("ai.rulesDesc")}</p>
+        </div>
+        <Button size="sm" variant="outline" class="shrink-0" onclick={() => void copy(RULES, t("ai.copyLabelRules"))}>
+          <Copy class="size-3.5" />
+          {t("ai.copy")}
+        </Button>
+      </div>
+      <pre class="mono max-h-72 overflow-auto rounded-md border border-border bg-detail p-3 text-xs leading-relaxed whitespace-pre-wrap">{RULES}</pre>
     </Section>
 
     <Section title={t("ai.detectTitle")} desc={t("ai.detectDesc")} icon={Bot}>
@@ -507,70 +538,62 @@
       {/if}
     </Section>
 
-    <Section title={t("ai.curTitle")} desc={t("ai.curDesc")} icon={Boxes} collapsible>
-      <p class="mono mb-2 break-all text-xs text-muted-foreground">{t("ai.dirLine", { dir: dir || t("common.unselected") })}</p>
+    <Section title={t("ai.curTitle")} desc={t("ai.curDesc")} icon={Boxes} collapsible defaultOpen>
+      <div class="mb-2 rounded-md border border-border bg-detail px-3 py-2">
+        <p class="mono break-all text-xs">{t("ai.dirLine", { dir: dir || t("ai.dirNone") })}</p>
+        <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {dir ? t("ai.dirMeaning") : t("ai.dirNoneNote")}
+        </p>
+      </div>
       <ul class="divide-y divide-border">
         {#each rows as { tool, res } (tool)}
-          <li class="flex flex-wrap items-center gap-2 py-2 text-xs">
-            <span class="w-16 shrink-0 font-medium">{TOOL_LABEL[tool]}</span>
-            <span class="mono w-32 shrink-0">{res?.version ?? t("ai.notSet")}</span>
-            {#if res}
-              <Badge tone={res.source === "projectFile" ? "accent" : res.version ? "ok" : "neutral"}>
-                {resolutionLabel(res.source)}
+          <li class="py-2.5 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="w-20 shrink-0 font-medium">{TOOL_LABEL[tool]}</span>
+              <span class="mono w-28 shrink-0">{res?.version ?? t("ai.notSet")}</span>
+              <Badge tone={res?.source === "projectFile" ? "accent" : res?.version ? "ok" : "neutral"}>
+                {sourceWord(res)}
               </Badge>
+              <span class="min-w-0 flex-1"></span>
+              {#if res?.version}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!!lockEntries[tool] || !dir}
+                  onclick={() => void app.lockProject(tool, res?.version ?? "")}
+                >{lockEntries[tool] ? t("ai.declared") : t("ai.lockHere")}</Button>
+              {:else}
+                <Button size="sm" variant="ghost" onclick={() => void app.setTool(tool)}>{t("ai.installOne")}</Button>
+              {/if}
+            </div>
+            <p class="mt-1 leading-relaxed text-muted-foreground pl-22">
+              {sourceDetail(res, tool)}
+              {#if tool === "pypy"}<span class="ml-1">{t("ai.pypyNote")}</span>{/if}
+            </p>
+            {#if res?.execPath}
+              <p class="mono mt-0.5 truncate text-muted-foreground pl-22" title={res.execPath}>
+                {t("ai.execPath", { path: res.execPath })}
+              </p>
             {/if}
-            {#if res?.foundIn}
-              <span class="mono min-w-0 flex-1 truncate text-muted-foreground" title={res.foundIn}>{res.foundIn}</span>
-            {:else}
-              <span class="min-w-0 flex-1 truncate text-muted-foreground">
-                {#if tool === "pypy"}
-                  {t("ai.pypyNote")}
-                {:else if res?.version}
-                  {t("ai.execPath", { path: res.execPath ?? t("ai.execMissing") })}
-                {:else}
-                  {t("ai.noDeclare")}
-                {/if}
-              </span>
-            {/if}
-            {#if res?.version}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!!lockEntries[tool]}
-                onclick={() => void app.lockProject(tool, res?.version ?? "")}
-              >{lockEntries[tool] ? t("ai.declared") : t("ai.lockHere")}</Button>
-            {:else}
-              <Button size="sm" variant="ghost" onclick={() => void app.setTool(tool)}>{t("ai.installOne")}</Button>
+            {#if res?.note}
+              <p class="mt-0.5 text-warning pl-22">{res.note}</p>
             {/if}
           </li>
-          {#if res?.note}
-            <li class="pb-2 text-xs text-warning">{res.note}</li>
-          {/if}
         {/each}
       </ul>
       <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-        <Button size="sm" onclick={() => void declareHere()} disabled={!dir}>
-          <Plus class="size-3.5" />
-          {t("ai.declareAll")}
-        </Button>
         <Button size="sm" variant="outline" onclick={() => void pickAndDeclare()}>
           <FolderOpen class="size-3.5" />
           {t("ai.pickProject")}
+        </Button>
+        <Button size="sm" onclick={() => void declareHere()} disabled={!dir}>
+          <Plus class="size-3.5" />
+          {t("ai.declareAll")}
         </Button>
         {#if registered}
           <Badge tone="ok">{t("ai.registered")}</Badge>
         {/if}
         <Hint text={t("ai.declareFoot")} />
-      </div>
-    </Section>
-
-    <Section title={t("ai.rulesTitle")} desc={t("ai.rulesDesc")} icon={ScrollText} collapsible>
-      <div class="relative">
-        <pre class="mono max-h-64 overflow-auto rounded-md border border-border bg-detail p-3 text-xs leading-relaxed whitespace-pre-wrap">{RULES}</pre>
-        <Button size="sm" variant="outline" class="absolute top-2 right-2" onclick={() => void copy(RULES, t("ai.copyLabelRules"))}>
-          <Copy class="size-3.5" />
-          {t("ai.copy")}
-        </Button>
       </div>
     </Section>
 
@@ -620,3 +643,18 @@
     </Section>
   </div>
 </div>
+
+{#if howOpen}
+  <Modal title={t("ai.howTitle")} onclose={() => (howOpen = false)}>
+    <p class="text-xs leading-relaxed text-muted-foreground">{t("ai.howDesc")}</p>
+    <ol class="mt-3 space-y-2 text-sm leading-relaxed">
+      {#each howSteps as line (line)}
+        <li>
+          {#each segs(line) as seg}
+            {#if seg.code}<span class="mono rounded bg-detail px-1">{seg.text}</span>{:else}{seg.text}{/if}
+          {/each}
+        </li>
+      {/each}
+    </ol>
+  </Modal>
+{/if}

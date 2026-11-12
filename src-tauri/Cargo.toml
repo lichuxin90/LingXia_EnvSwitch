@@ -1,6 +1,6 @@
 [package]
 name = "envswitch"
-version = "0.1.0"
+version = "0.1.8"
 description = "灵匣·EnvSwitch 多语言运行时版本管理器"
 authors = ["李初心"]
 edition = "2024"
@@ -16,10 +16,9 @@ crate-type = ["rlib"]
 [features]
 # tauri CLI 打包时自动带上；手搓 cargo 必须显式 --features，否则二进制是 dev 模式，会去连 devUrl 而不是内嵌的 dist。
 custom-protocol = ["tauri/custom-protocol"]
-# 转发用的控制台程序只在 scripts/stage-shim.mjs 里显式开启。
+# 转发用的控制台程序只在 scripts/stage-shim.mjs 里显式开启，编好后内嵌进主程序。
 # 不这么做的话，主构建会顺手在 target/release 里也产出一份 envswitch-shim.exe，
-# tauri 会把这份和 externalBin 那份装进同一个安装目录，
-# msi 链接时判定"同一个目标文件由两个组件安装"（ICE30）直接失败。
+# 打包时会被一起收进安装包，发布包就不再是干净的一个 exe 了。
 shim = []
 
 # 主程序：图形界面，控制台窗口不该由它带出来。

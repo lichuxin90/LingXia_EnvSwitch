@@ -5,9 +5,12 @@
   import { api } from "$lib/ipc";
   import { t, type MsgKey } from "$lib/i18n/store.svelte";
   import { app } from "$lib/state.svelte";
+  import { onSystemDrive } from "$lib/utils";
   import type { DataRootCandidate } from "$lib/types";
 
   const candidates = $derived(app.boot?.candidates ?? []);
+  const systemDrive = $derived(app.boot?.systemDrive ?? "");
+  const onCDrive = (dir: string): boolean => onSystemDrive(dir, systemDrive);
   let picked = $state("");
 
   const ROOT_KEY: Record<string, MsgKey> = {
@@ -24,8 +27,10 @@
   const rootNote = (c: DataRootCandidate): string =>
     c.id === "programData" ? t("firstRun.rootProgramDataNote") : (c.note ?? "");
 
+  /** 默认只勾非系统盘的那条：C 盘要用户自己点，点了还会再弹一次危险确认。 */
   $effect(() => {
-    if (!picked && candidates.length) picked = candidates[0].dir;
+    if (picked || !candidates.length) return;
+    picked = candidates.find((c) => !onCDrive(c.dir))?.dir ?? "";
   });
 
   async function browse(): Promise<void> {
@@ -70,15 +75,19 @@
                 <p class="mt-0.5 text-xs text-muted-foreground">{rootNote(c)}</p>
               {/if}
             </div>
-            {#if c.rank === 0}
-              <Badge tone="ok">{t("firstRun.recommended")}</Badge>
-            {:else if /C:/.test(c.dir)}
+            {#if onCDrive(c.dir)}
               <Badge tone="warn">{t("firstRun.cDrive")}</Badge>
+            {:else if c.rank === 0}
+              <Badge tone="ok">{t("firstRun.recommended")}</Badge>
             {/if}
           </button>
         </li>
       {/each}
     </ul>
+
+    {#if systemDrive}
+      <p class="mt-2 text-xs leading-relaxed text-muted-foreground">{t("firstRun.cDriveNote")}</p>
+    {/if}
 
     <div class="mt-4 flex items-center gap-2">
       <Button variant="outline" size="sm" onclick={browse}>

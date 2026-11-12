@@ -6,6 +6,7 @@ use crate::core::error::{Error, Result};
 use crate::core::model::{AvailableVersion, Companion, ToolId};
 
 pub mod eol;
+pub mod extra;
 pub mod go;
 pub mod node;
 pub mod python;
@@ -51,6 +52,7 @@ pub enum ShimTarget {
     Bin(PathBuf),
     Script(PathBuf),
     Module(String),
+    Args(Vec<String>),
 }
 
 #[derive(Debug, Clone)]
@@ -66,16 +68,12 @@ pub enum Plugin {
     Python(python::PythonPlugin),
     Go(go::GoPlugin),
     PyPy(pypy::PyPyPlugin),
+    Extra(extra::ExtraPlugin),
 }
 
 impl Plugin {
     pub fn all() -> Vec<Plugin> {
-        vec![
-            Plugin::Node(node::NodePlugin),
-            Plugin::Python(python::PythonPlugin),
-            Plugin::Go(go::GoPlugin),
-            Plugin::PyPy(pypy::PyPyPlugin),
-        ]
+        ToolId::ALL.into_iter().filter_map(Self::for_tool_ok).collect()
     }
 
     pub fn nav_all() -> Vec<Plugin> {
@@ -92,6 +90,7 @@ impl Plugin {
             ToolId::Python => Plugin::Python(python::PythonPlugin),
             ToolId::Go => Plugin::Go(go::GoPlugin),
             ToolId::PyPy => Plugin::PyPy(pypy::PyPyPlugin),
+            other => Plugin::Extra(extra::ExtraPlugin(other)),
         })
     }
 
@@ -101,6 +100,7 @@ impl Plugin {
             Plugin::Python(_) => ToolId::Python,
             Plugin::Go(_) => ToolId::Go,
             Plugin::PyPy(_) => ToolId::PyPy,
+            Plugin::Extra(p) => p.0,
         }
     }
 
@@ -110,6 +110,7 @@ impl Plugin {
             Plugin::Python(p) => p.sources(),
             Plugin::Go(p) => p.sources(),
             Plugin::PyPy(p) => p.sources(),
+            Plugin::Extra(p) => p.sources(),
         }
     }
 
@@ -133,6 +134,7 @@ impl Plugin {
             Plugin::Python(p) => p.list_versions(client, src).await,
             Plugin::Go(p) => p.list_versions(client, src).await,
             Plugin::PyPy(p) => p.list_versions(client, src).await,
+            Plugin::Extra(p) => p.list_versions(client, src).await,
         }
     }
 
@@ -147,6 +149,7 @@ impl Plugin {
             Plugin::Python(p) => p.artifact(src, v),
             Plugin::Go(p) => p.artifact(src, v),
             Plugin::PyPy(p) => p.artifact(src, v),
+            Plugin::Extra(p) => p.artifact(src, v),
         }
     }
 
@@ -157,6 +160,7 @@ impl Plugin {
             Plugin::Python(_) => python::payload_markers(),
             Plugin::Go(_) => go::payload_markers(),
             Plugin::PyPy(_) => pypy::payload_markers(),
+            Plugin::Extra(p) => vec![p.exec_rel()],
         }
     }
 
@@ -166,6 +170,7 @@ impl Plugin {
             Plugin::Python(_) => python::exec_rel(),
             Plugin::Go(_) => go::exec_rel(),
             Plugin::PyPy(_) => pypy::exec_rel(),
+            Plugin::Extra(p) => p.exec_rel(),
         }
     }
 
@@ -176,6 +181,7 @@ impl Plugin {
             Plugin::Python(_) => python::shim_specs(),
             Plugin::Go(_) => go::shim_specs(),
             Plugin::PyPy(_) => pypy::shim_specs(),
+            Plugin::Extra(p) => p.shims(),
         }
     }
 
@@ -186,6 +192,7 @@ impl Plugin {
             Plugin::Python(p) => p.companions(root),
             Plugin::Go(p) => p.companions(root),
             Plugin::PyPy(p) => p.companions(root),
+            Plugin::Extra(_) => Vec::new(),
         }
     }
 
@@ -235,7 +242,7 @@ pub fn strip_v(raw: &str) -> String {
 pub fn line_key(tool: ToolId, version: &str) -> String {
     match tool {
         ToolId::Node => version.trim().trim_start_matches('v').split('.').next().unwrap_or("").to_string(),
-        ToolId::Python => {
+        ToolId::Python | ToolId::Php | ToolId::MySql | ToolId::Bun | ToolId::Deno => {
             let parts: Vec<&str> = version
                 .trim()
                 .trim_start_matches('v')

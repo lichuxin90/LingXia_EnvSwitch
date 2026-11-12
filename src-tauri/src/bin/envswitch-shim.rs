@@ -1,7 +1,8 @@
 //! 转发程序：放在 shims 目录里的多入口小程序。
 //!
 //! 它是控制台程序：Windows 上 GUI 主程序没有控制台，用它转发才能保住 node 的输出。
-//! 同一个文件按自己的文件名决定行为——叫 node.exe 就转发 Node，叫 envswitch-shim.exe 就当作命令行工具。
+//! 同一个文件按自己的文件名决定行为——叫 node.exe 就转发 Node，
+//! 叫 envswitch-shim.exe 或 envswitch-forward.exe 就当作命令行工具。
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
@@ -23,14 +24,15 @@ fn main() -> ExitCode {
     let rest: Vec<String> = argv.map(|s| s.to_string_lossy().to_string()).collect();
     let name = file_stem_lower(&me);
     // 转发别的命令时不碰代码页：那时屏幕上该显示的是 node、python 自己的输出。
-    let _utf8 = if name == "envswitch-shim" || name.is_empty() {
+    let _utf8 = if name == "envswitch-shim" || name == shim::FORWARD_STEM || name.is_empty() {
         console::use_utf8()
     } else {
         None
     };
     let code = match name.as_str() {
         "" => fail(&Error::Detail("认不出自己的文件名".to_string())),
-        "envswitch-shim" => run_cli(&rest),
+        // 数据目录 bin/ 里释放出来的模板叫 envswitch-forward，提权写系统 PATH 用的就是它。
+        "envswitch-shim" | shim::FORWARD_STEM => run_cli(&rest),
         _ => run_forward(&name, &rest),
     };
     ExitCode::from(code)
@@ -45,6 +47,7 @@ fn file_stem_lower(path: &OsStr) -> String {
 
 /// 转发名属于哪个工具；npm、pip 这类附带命令也归各自工具管。
 fn owner(name: &str) -> Option<ToolId> {
+    if name == "composer" { return Some(ToolId::Php); }
     Plugin::all()
         .into_iter()
         .find(|p| p.shims().iter().any(|s| s.name == name))
@@ -75,18 +78,28 @@ fn run_forward(name: &str, args: &[String]) -> u8 {
         }
         return EXIT_NOT_FOUND;
     };
-    let fwd = match shim::forward_for(&registry, tool, &version, name) {
+    let fwd = if name == "composer" {
+        let Some(phar) = find_composer_phar() else {
+            eprintln!("EnvSwitch：没有在 PATH 中找到 Composer（composer.phar）；请先安装 Composer 并重试。");
+            return EXIT_NOT_FOUND;
+        };
+        shim::Forward { program: registry.find(tool, &version).expect("resolved PHP version").exec_path.clone(), prefix_args: vec![phar.to_string_lossy().to_string()] }
+    } else { match shim::forward_for(&registry, tool, &version, name) {
         Ok(f) => f,
         Err(e) => return fail(&e),
-    };
-    let status = std::process::Command::new(&fwd.program)
+    }};
+    let mut command = std::process::Command::new(&fwd.program);
+    command
         .args(&fwd.prefix_args)
         .args(args)
         .current_dir(&cwd)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status();
+        .stderr(Stdio::inherit());
+    if let Err(e) = configure_package_sources(&mut command, name, tool, args, &settings, &fwd) {
+        return fail(&e);
+    }
+    let status = command.status();
     match status {
         Ok(s) => s
             .code()
@@ -96,6 +109,133 @@ fn run_forward(name: &str, args: &[String]) -> u8 {
             "启动 {} 失败：{e}",
             fwd.program.display()
         ))),
+    }
+}
+
+fn find_composer_phar() -> Option<PathBuf> {
+    let search = std::env::var_os("PATH")?;
+    let managed_shims = paths::layout().ok().map(|layout| layout.shims);
+    std::env::split_paths(&search)
+        .filter(|dir| managed_shims.as_ref() != Some(dir))
+        .map(|dir| dir.join("composer.phar"))
+        .find(|file| file.is_file())
+}
+
+fn package_managers(name: &str, tool: ToolId, args: &[String]) -> Vec<&'static str> {
+    if name == "composer" { return vec!["composer"]; }
+    if matches!(name, "pip" | "pip3")
+        || (matches!(tool, ToolId::Python | ToolId::PyPy)
+            && args.windows(2).any(|p| p[0] == "-m" && p[1] == "pip"))
+    { return vec!["pip"]; }
+    match name {
+        "npm" | "npx" | "bun" | "bunx" => vec!["npm"],
+        "deno" => vec!["deno", "deno-jsr"],
+        _ => vec![],
+    }
+}
+
+fn configure_package_sources(
+    command: &mut std::process::Command, name: &str, tool: ToolId, args: &[String],
+    settings: &Settings, forward: &shim::Forward,
+) -> Result<()> {
+    let managers = package_managers(name, tool, args);
+    if managers.is_empty() { return Ok(()); }
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let urls = runtime.block_on(futures_util::future::join_all(managers.iter().map(|m|
+        envswitch_lib::core::package_sources::resolve_url(m, settings)
+    )));
+    for (manager, url) in managers.iter().zip(urls) {
+        let Some(url) = url else { continue; };
+        match *manager {
+            "pip" => { command.env("PIP_INDEX_URL", &url); }
+            "npm" | "deno" => { command.env("NPM_CONFIG_REGISTRY", &url); }
+            "deno-jsr" => { command.env("JSR_URL", &url); }
+            "composer" => {
+                // Ask Composer itself for its home; keep its auth, plugins and global packages.
+                let output = std::process::Command::new(&forward.program)
+                    .args(&forward.prefix_args).args(["config", "--global", "home", "--absolute"])
+                    .current_dir(command.get_current_dir().unwrap_or(Path::new(".")))
+                    .output()?;
+                if !output.status.success() {
+                    return Err(Error::Config(format!("读取 Composer 配置目录失败：{}", String::from_utf8_lossy(&output.stderr))));
+                }
+                let home = String::from_utf8_lossy(&output.stdout);
+                let home = home.trim();
+                if home.is_empty() { return Err(Error::Config("Composer 返回了空配置目录".into())); }
+                configure_composer_home(Path::new(home), &url)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn configure_composer_home(home: &Path, packagist_url: &str) -> Result<()> {
+    let path = home.join("config.json");
+    let original = std::fs::read(&path).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(Vec::new()) } else { Err(e) })?;
+    let mut config: serde_json::Value = if original.is_empty() { serde_json::json!({}) }
+        else { serde_json::from_slice(&original).map_err(|e| Error::Config(format!("Composer 配置解析失败：{e}")))? };
+    let repositories = config.as_object_mut().ok_or_else(|| Error::Config("Composer 配置必须是 JSON 对象".into()))?
+        .entry("repositories").or_insert_with(|| serde_json::json!({}));
+    let mirror = serde_json::json!({"type":"composer","url":packagist_url});
+    match repositories {
+        serde_json::Value::Object(repos) => {
+            repos.remove("packagist");
+            repos.insert("packagist.org".into(), mirror);
+        }
+        serde_json::Value::Array(repos) => {
+            repos.retain(|repo| repo.get("packagist.org").is_none() && repo.get("packagist").is_none()
+                && !repo.get("name").is_some_and(|n| n == "envswitch-packagist"));
+            let mut mirror = mirror;
+            mirror["name"] = "envswitch-packagist".into();
+            repos.insert(0, mirror);
+            repos.push(serde_json::json!({"packagist.org":false}));
+        }
+        _ => return Err(Error::Config("Composer repositories 配置必须是对象或数组".into())),
+    }
+    let updated = serde_json::to_vec_pretty(&config)?;
+    if updated == original { return Ok(()); }
+    std::fs::create_dir_all(home)?;
+    let backup = home.join("config.json.envswitch-backup");
+    if !original.is_empty() && !backup.exists() { std::fs::write(backup, &original)?; }
+    envswitch_lib::core::util::write_json(&path, &config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_injection_is_limited_to_package_commands() {
+        assert!(package_managers("python", ToolId::Python, &["script.py".into()]).is_empty());
+        assert_eq!(package_managers("python", ToolId::Python, &["-m".into(),"pip".into(),"install".into()]), vec!["pip"]);
+        assert_eq!(package_managers("deno", ToolId::Deno, &[]), vec!["deno", "deno-jsr"]);
+    }
+
+    #[test]
+    fn composer_changes_only_packagist_and_preserves_auth_and_custom_repositories() {
+        let root = std::env::temp_dir().join(format!("envswitch-composer-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.json");
+        let auth = root.join("auth.json");
+        let original = r#"{"config":{"allow-plugins":{"a/b":true}},"repositories":{"custom":{"type":"composer","url":"https://example.test"}}}"#;
+        std::fs::write(&path, original).unwrap();
+        std::fs::write(&auth, "unchanged").unwrap();
+        configure_composer_home(&root, "https://mirror.example/").unwrap();
+        let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(config["repositories"]["custom"]["url"], "https://example.test");
+        assert_eq!(config["repositories"]["packagist.org"]["url"], "https://mirror.example/");
+        assert_eq!(config["config"]["allow-plugins"]["a/b"], true);
+        assert_eq!(std::fs::read_to_string(&auth).unwrap(), "unchanged");
+        assert_eq!(std::fs::read_to_string(root.join("config.json.envswitch-backup")).unwrap(), original);
+        std::fs::write(&path, r#"{"repositories":[{"type":"vcs","url":"https://custom.test"}]}"#).unwrap();
+        configure_composer_home(&root, "https://one.example/").unwrap();
+        configure_composer_home(&root, "https://two.example/").unwrap();
+        let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(config["repositories"].as_array().unwrap().len(), 3);
+        assert_eq!(config["repositories"][0]["url"], "https://two.example/");
+        assert_eq!(config["repositories"][1]["url"], "https://custom.test");
+        let _ = std::fs::remove_dir_all(root);
     }
 }
 

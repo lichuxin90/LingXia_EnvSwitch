@@ -17,7 +17,7 @@ import type {
   ToolId,
   VersionPage,
 } from "./types";
-import { scopeLabel, TOOL_LABEL } from "./utils";
+import { scopeLabel, onSystemDrive, TOOL_LABEL } from "./utils";
 
 export type View = "home" | "tool" | "project" | "mirror" | "env" | "ai" | "settings" | "about";
 
@@ -46,6 +46,15 @@ export interface ProgressRow {
   message: string | null;
 }
 
+/** 危险确认弹窗的内容；resolve 由弹窗组件在用户点按钮时调用。 */
+export interface DangerAsk {
+  tone?: "default" | "danger";
+  title: string;
+  body: string;
+  confirm: string;
+  resolve: (ok: boolean) => void;
+}
+
 let toastSeq = 1;
 
 export class AppState {
@@ -59,6 +68,8 @@ export class AppState {
   tool: ToolId = $state("node");
   /** 设置不再占一个侧栏视图，改成盖在当前页上的浮层；这个开关只控制浮层。 */
   settingsOpen = $state(false);
+  /** 有值就弹危险确认框，用户点完才继续。 */
+  danger: DangerAsk | null = $state(null);
   selected: Selection | null = $state(null);
 
   page: VersionPage | null = $state(null);
@@ -77,6 +88,11 @@ export class AppState {
 
   busy = $state(false);
   loadingVersions = $state(false);
+  scanning = $state(false);
+  private envRequest: Promise<boolean> | null = null;
+  private toolCache = new Map<ToolId, { page: VersionPage; installed: InstalledPage; sources: SourceInfo[] }>();
+  private toolRequests = new Map<ToolId, Promise<void>>();
+  private toolGeneration = new Map<ToolId, number>();
   filter = $state("");
   toasts: Toast[] = $state([]);
   dark = $state(false);
@@ -113,6 +129,12 @@ export class AppState {
 
   /** 设置从 Rust 回来后进这里：配色和语言都要跟着刷新。 */
   applySettings(next: Settings): void {
+    const previous = this.settings;
+    if (previous && (JSON.stringify(previous.sources) !== JSON.stringify(next.sources) ||
+        JSON.stringify(previous.customBase) !== JSON.stringify(next.customBase) ||
+        previous.proxyMode !== next.proxyMode || previous.proxyUrl !== next.proxyUrl)) {
+      for (const tool of new Set([...this.toolCache.keys(), ...this.toolRequests.keys()])) this.invalidateTool(tool);
+    }
     this.settings = next;
     this.applyTheme();
     this.applyLanguage();
@@ -128,9 +150,8 @@ export class AppState {
     this.applyLanguage();
     document.querySelectorAll<HTMLScriptElement>("script[data-theme-boot]").forEach((n) => n.remove());
     if (boot.needsSetup) return;
-    // 启动只读首屏要用的两份数据：环境体检（扫 PATH、查转发文件）留到用户点按钮再做，
-    // 否则每次开软件都要卡在那一下上。
-    await Promise.all([this.refreshTool(), this.refreshDir(boot.settings.lastProjectDir ?? null)]);
+    // 首屏不等待远程版本清单；已有环境由首页在后台读取。
+    await this.refreshDir(boot.settings.lastProjectDir ?? null);
   }
 
   setView(view: View): void {
@@ -140,8 +161,6 @@ export class AppState {
     }
     this.view = view;
     if (view !== "tool") this.selected = null;
-    if (view === "env") void this.refreshEnv();
-    if (view === "mirror") void this.refreshMirror();
     if (view === "project") void this.refreshDir(null);
   }
 
@@ -149,29 +168,114 @@ export class AppState {
     this.settingsOpen = false;
   }
 
+  /** 弹一次危险确认，等用户点完再往下走。 */
+  askDanger(title: string, body: string, confirm: string, tone: "default" | "danger" = "danger"): Promise<boolean> {
+    this.answerDanger(false);
+    return new Promise((resolve) => {
+      this.danger = { title, body, confirm, tone, resolve };
+    });
+  }
+
+  answerDanger(ok: boolean): void {
+    const ask = this.danger;
+    this.danger = null;
+    ask?.resolve(ok);
+  }
+
+  /** 落在系统盘上的目录要用户亲自点头才用；换个盘就直接放行。 */
+  private async confirmSystemDrive(dir: string, what: string): Promise<boolean> {
+    if (!onSystemDrive(dir, this.boot?.systemDrive ?? "")) return true;
+    return this.askDanger(
+      t("danger.sysDriveTitle", { what }),
+      t("danger.sysDriveBody", { dir, drive: this.boot?.systemDrive ?? "" }),
+      t("danger.sysDriveConfirm"),
+    );
+  }
+
+  /** 直接指定项目目录（点已登记的那条）：系统盘先确认，再解析并落盘。 */
+  async useProjectDir(dir: string): Promise<boolean> {
+    if (!(await this.confirmSystemDrive(dir, t("danger.whatProjectDir")))) return false;
+    await this.refreshDir(dir);
+    return true;
+  }
+
+  /** 选项目目录的唯一入口：选完先过系统盘确认，再解析并落盘。 */
+  async pickProjectDir(): Promise<string | null> {
+    let picked: string | null = null;
+    try {
+      picked = await api.pickFolder();
+    } catch (e) {
+      this.fail(e, t("ai.pickFailed"));
+      return null;
+    }
+    if (!picked) return null;
+    return (await this.useProjectDir(picked)) ? picked : null;
+  }
+
   /** 版本页里的工具切换；下载源那种「只是换个工具看」的调用传 false，别把页面顶走。 */
   async setTool(tool: ToolId, gotoVersions = true): Promise<void> {
     this.tool = tool;
     if (gotoVersions) this.view = "tool";
     this.selected = null;
-    await Promise.all([this.refreshTool(), this.refreshDir(null)]);
+    this.filter = "";
+    const cached = this.toolCache.get(tool);
+    this.page = cached?.page ?? null;
+    this.installed = cached?.installed ?? null;
+    this.sources = cached?.sources ?? [];
+    this.loadingVersions = !cached;
+    if (!cached) await this.refreshTool();
+    else {
+      // Local state may change while another runtime is selected.
+      try {
+        const installed = await api.installedVersions(tool, this.dirContext?.dir ?? null);
+        cached.installed = installed;
+        if (this.tool === tool) this.installed = installed;
+      } catch (e) { if (this.tool === tool) this.fail(e); }
+    }
   }
 
   select(version: string | null): void {
     this.selected = version ? { tool: this.tool, version } : null;
   }
 
+  private invalidateTool(tool: ToolId): void {
+    this.toolCache.delete(tool);
+    this.toolGeneration.set(tool, (this.toolGeneration.get(tool) ?? 0) + 1);
+    this.toolRequests.delete(tool);
+  }
+
   async refreshTool(refresh = false): Promise<void> {
+    const tool = this.tool;
+    if (!refresh && this.toolRequests.has(tool)) return this.toolRequests.get(tool);
+    const generation = (this.toolGeneration.get(tool) ?? 0) + 1;
+    this.toolGeneration.set(tool, generation);
     this.loadingVersions = true;
-    try {
-      this.page = await api.listVersions(this.tool, refresh);
-      this.installed = await api.installedVersions(this.tool, this.dirContext?.dir ?? null);
-      this.sources = await api.sourcesOf(this.tool);
-    } catch (e) {
-      this.fail(e, t("msg.versionListFailed", { tool: this.toolName }));
-    } finally {
-      this.loadingVersions = false;
-    }
+    const request = (async () => {
+      try {
+        const [page, installed, sources] = await Promise.all([
+          api.listVersions(tool, refresh),
+          api.installedVersions(tool, this.dirContext?.dir ?? null),
+          api.sourcesOf(tool),
+        ]);
+        if (this.toolGeneration.get(tool) !== generation) return;
+        this.toolCache.set(tool, { page, installed, sources });
+        if (this.tool === tool) {
+          this.page = page;
+          this.installed = installed;
+          this.sources = sources;
+        }
+      } catch (e) {
+        if (this.tool === tool && this.toolGeneration.get(tool) === generation)
+          this.fail(e, t("msg.versionListFailed", { tool: TOOL_LABEL[tool] }));
+      } finally {
+        if (this.toolGeneration.get(tool) === generation) {
+          this.toolRequests.delete(tool);
+          if (this.tool === tool) this.loadingVersions = false;
+        }
+      }
+    })();
+    this.toolRequests.set(tool, request);
+    return request;
   }
 
   get toolName(): string {
@@ -179,33 +283,46 @@ export class AppState {
   }
 
   async refreshMirror(): Promise<void> {
+    const tool = this.tool;
     try {
-      this.sources = await api.sourcesOf(this.tool);
-      this.probes = await api.probeSources(this.tool);
-    } catch (e) {
-      this.fail(e, t("msg.probeFailed"));
-    }
+      const [sources, probes] = await Promise.all([api.sourcesOf(tool), api.probeSources(tool)]);
+      if (this.tool === tool) { this.sources = sources; this.probes = probes; }
+    } catch (e) { if (this.tool === tool) this.fail(e, t("msg.probeFailed")); }
   }
 
-  async refreshEnv(): Promise<void> {
-    try {
-      this.scan = await api.envScan();
-      this.hooks = await api.hookStatus();
-      this.paths = await api.pathStatus();
-    } catch (e) {
-      this.fail(e, t("msg.envScanFailed"));
-    }
+  async refreshEnv(): Promise<boolean> {
+    if (this.envRequest) return this.envRequest;
+    this.scanning = true;
+    this.envRequest = (async () => {
+      try {
+        const [scan, hooks, paths, shims] = await Promise.all([api.envScan(), api.hookStatus(), api.pathStatus(), api.shimList()]);
+        this.scan = scan; this.hooks = hooks; this.paths = paths;
+        if (this.boot) this.boot.shims = shims;
+        return true;
+      } catch (e) { this.fail(e, t("msg.envScanFailed")); return false; }
+      finally { this.scanning = false; this.envRequest = null; }
+    })();
+    return this.envRequest;
   }
 
   async refreshDir(dir: string | null): Promise<void> {
     try {
       this.dirContext = await api.dirResolution(dir);
+      const now = this.dirContext.dir || null;
       if (this.settings) {
-        this.settings = { ...this.settings, lastProjectDir: this.dirContext.dir };
+        this.settings = { ...this.settings, lastProjectDir: now };
       }
+      // 用户挑的目录要落盘，否则重开程序又回到"没选过"，界面再次显示别的目录。
+      if (dir && dir.trim()) await api.rememberProjectDir(now);
     } catch (e) {
       this.fail(e, t("msg.dirReadFailed"));
     }
+  }
+
+  /** 取消登记：后端会顺手清掉记住的目录，这里重读一次让界面跟着变。 */
+  async forgetProject(dir: string): Promise<void> {
+    await api.forgetProject(dir);
+    await this.refreshDir(null);
   }
 
   /** 进度事件按任务号归并，卸载/接管这类没有百分比的阶段也照样占一行。 */
@@ -230,14 +347,33 @@ export class AppState {
         this.tick += 1;
       }, snapshot.phase === "done" ? 2600 : 8000);
       if (snapshot.phase === "done") {
-        void this.refreshTool();
+        if (snapshot.tool) this.invalidateTool(snapshot.tool);
+        if (this.view === "tool") void this.refreshTool();
         void this.refreshDir(null);
       }
     }
   }
 
+  private forwardingCheck: Promise<boolean> | null = null;
+
+  async ensureForwarding(): Promise<boolean> {
+    if (this.forwardingCheck) return this.forwardingCheck;
+    this.forwardingCheck = (async () => {
+      const missing = await api.shimMissing();
+      if (!missing.length) return true;
+      if (!(await this.askDanger(t("shim.repairTitle"), t("shim.repairBody", { files: missing.join("\n") }), t("shim.repairConfirm"), "default"))) return false;
+      const files = await api.shimSync();
+      if (this.boot) this.boot = { ...this.boot, shims: files };
+      this.toast(t("msg.shimSynced", { n: files.length }), "ok");
+      return true;
+    })();
+    try { return await this.forwardingCheck; }
+    finally { this.forwardingCheck = null; }
+  }
+
   async install(version: string): Promise<void> {
     try {
+      if (!(await this.ensureForwarding())) return;
       await api.installVersion(this.tool, version);
       this.toast(t("msg.installStarted", { tool: this.toolName, version }), "info");
     } catch (e) {
@@ -254,11 +390,14 @@ export class AppState {
   }
 
   async switchTo(version: string): Promise<void> {
+    const tool = this.tool;
     try {
-      const res = await api.switchVersion(this.tool, version);
-      this.installed = await api.installedVersions(this.tool, this.dirContext?.dir ?? null);
+      if (!(await this.ensureForwarding())) return;
+      const res = await api.switchVersion(tool, version);
+      this.invalidateTool(tool);
+      if (this.tool === tool) await this.refreshTool();
       this.toast(
-        res.note ?? t("msg.switched", { tool: this.toolName, version }),
+        res.note ?? t("msg.switched", { tool: TOOL_LABEL[tool], version }),
         "ok",
       );
     } catch (e) {
@@ -269,6 +408,7 @@ export class AppState {
   async uninstall(version: string, purge: boolean, tool: ToolId = this.tool): Promise<void> {
     try {
       const note = await api.uninstallVersion(tool, version, purge);
+      this.invalidateTool(tool);
       this.toast(note, "ok", 7000);
       await Promise.all([this.refreshTool(), this.refreshDir(null)]);
     } catch (e) {
@@ -278,9 +418,11 @@ export class AppState {
 
   async adopt(exe: string, tool: ToolId, version: string | null, copy: boolean): Promise<void> {
     try {
+      if (!(await this.ensureForwarding())) return;
       const res = await api.adoptRuntime(tool, exe, version, copy);
+      this.invalidateTool(tool);
       this.toast(`${res.installed.version}：${res.note}`, "ok", 8000);
-      await this.refreshTool();
+      if (this.view === "tool") void this.refreshTool();
       await this.refreshEnv();
     } catch (e) {
       this.fail(e, t("msg.adoptFailed"));
@@ -300,6 +442,7 @@ export class AppState {
 
   async importOffline(files: string[]): Promise<void> {
     try {
+      if (!(await this.ensureForwarding())) return;
       const jobs = await api.importOffline(files);
       this.toast(t("msg.importStarted", { n: jobs.length }), "info");
       this.guesses = [];
@@ -322,6 +465,10 @@ export class AppState {
     if (!this.settings) return;
     const next = { ...this.settings, ...part };
     try {
+      if ((part.autoSwitch === true && !this.settings.autoSwitch) ||
+          (part.pathScope !== undefined && part.pathScope !== this.settings.pathScope)) {
+        if (!(await this.ensureForwarding())) return;
+      }
       this.applySettings(await api.updateSettings(next));
       this.paths = await api.pathStatus();
       if (savedNote) this.toast(savedNote, "ok", 3200);
@@ -348,6 +495,7 @@ export class AppState {
   }
 
   async chooseDataRoot(dir: string): Promise<void> {
+    if (!(await this.confirmSystemDrive(dir, t("danger.whatDataRoot")))) return;
     try {
       const layout = await api.chooseDataRoot(dir);
       this.boot = await api.boot();
@@ -361,6 +509,7 @@ export class AppState {
 
   async pathApply(scope: PathScope): Promise<void> {
     try {
+      if (!(await this.ensureForwarding())) return;
       const st = await api.pathApply(scope);
       this.paths = await api.pathStatus();
       this.toast(
@@ -395,6 +544,7 @@ export class AppState {
 
   async hookToggle(shell: string, on: boolean): Promise<void> {
     try {
+      if (on && !(await this.ensureForwarding())) return;
       this.hooks = await api.hookSet(shell, on);
     } catch (e) {
       this.fail(e, on ? t("msg.hookOnFailed") : t("msg.hookOffFailed"));
@@ -415,6 +565,7 @@ export class AppState {
     const dir = this.dirContext?.dir;
     if (!dir) return;
     try {
+      if (!(await this.ensureForwarding())) return;
       await api.lockProject(dir, tool, version);
       await this.refreshDir(dir);
       this.toast(t("msg.projectLocked", { version }), "ok");

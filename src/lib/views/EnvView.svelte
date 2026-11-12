@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ExternalRuntimes from "$lib/components/ExternalRuntimes.svelte";
   import { ChevronDown, RotateCcw, ScanSearch, ShieldAlert, Sparkles, TriangleAlert, Wand } from "@lucide/svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -46,17 +47,14 @@
     }
   }
 
+  /** 进入环境页面时刷新本地状态。 */
   $effect(() => {
-    if (app.view === "env") void reload();
+    void reload();
   });
 
   const userStatus = $derived(app.paths.find((p) => p.scope === "user") ?? null);
   const systemStatus = $derived(app.paths.find((p) => p.scope === "system") ?? null);
   const activeScope = $derived(app.settings?.pathScope ?? "user");
-
-  async function adopt(exe: string, tool: ToolId, version: string | null, copy: boolean): Promise<void> {
-    await app.adopt(exe, tool, version, copy);
-  }
 
   async function openPreview(): Promise<void> {
     try {
@@ -87,6 +85,7 @@
   </header>
 
   <div class="space-y-5 px-6 py-5">
+    <ExternalRuntimes />
     {#if !app.boot?.elevated}
       <p class="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
         <ShieldAlert class="mt-0.5 size-3.5 shrink-0" />
@@ -253,32 +252,6 @@
         </ul>
       {:else}
         <p class="mb-3 text-xs text-muted-foreground">{t("env.noConflict")}</p>
-      {/if}
-
-      {#if app.scan?.foreign.length}
-        <ul class="divide-y divide-border">
-          {#each app.scan.foreign as f (f.exe)}
-            <li class="flex flex-wrap items-center gap-2 py-2 text-xs">
-              <span class="w-24 shrink-0 font-medium">{f.name}</span>
-              <span class="mono w-20 shrink-0">{f.version ?? t("env.versionUnread")}</span>
-              {#if f.manager}<Badge tone="outline">{f.manager}</Badge>{/if}
-              <span class="min-w-0 flex-1 truncate text-muted-foreground" title={f.exe}>{f.exe}</span>
-              {#if f.takeable && f.tool}
-                <Button size="sm" variant="outline" title={t("env.takeoverTip")} onclick={() => void adopt(f.exe, f.tool as ToolId, f.version, false)}>
-                  <Sparkles class="size-3.5" />
-                  {t("env.takeover")}
-                </Button>
-                <Button size="sm" variant="ghost" title={t("env.copyInTip")} onclick={() => void adopt(f.exe, f.tool as ToolId, f.version, true)}>
-                  {t("env.copyIn")}
-                </Button>
-              {:else}
-                <span class="text-muted-foreground">{f.whyNot ?? t("env.notTakeable")}</span>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {:else}
-        <p class="text-xs text-muted-foreground">{t("env.noForeign")}</p>
       {/if}
 
       {#if app.scan?.notes.length}

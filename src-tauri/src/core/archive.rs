@@ -252,14 +252,15 @@ pub fn move_payload(from: &Path, to: &Path) -> Result<()> {
 pub fn copy_tree(from: &Path, to: &Path) -> Result<u64> {
     let mut copied = 0u64;
     std::fs::create_dir_all(to)?;
-    let mut stack = vec![from.to_path_buf()];
-    while let Some(dir) = stack.pop() {
+    let mut stack = vec![(from.to_path_buf(), to.to_path_buf())];
+    while let Some((dir, dest_dir)) = stack.pop() {
         for entry in std::fs::read_dir(&dir)? {
             let entry = entry?;
             let src = entry.path();
-            let dst = to.join(entry.file_name());
+            let dst = dest_dir.join(entry.file_name());
             if src.is_dir() {
-                stack.push(src);
+                std::fs::create_dir_all(&dst)?;
+                stack.push((src, dst));
             } else {
                 if let Some(parent) = dst.parent() {
                     std::fs::create_dir_all(parent)?;
@@ -270,6 +271,30 @@ pub fn copy_tree(from: &Path, to: &Path) -> Result<u64> {
         }
     }
     Ok(copied)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fallback_copy_keeps_nested_paths_and_empty_directories() {
+        let root = std::env::temp_dir().join(format!("envswitch-copy-test-{}-{}", std::process::id(), super::super::util::timestamp()));
+        let source = root.join("source");
+        let dest = root.join("dest");
+        std::fs::create_dir_all(source.join("bin/empty")).unwrap();
+        std::fs::create_dir_all(source.join("lib")).unwrap();
+        std::fs::write(source.join("bin/mysql.exe"), b"exe").unwrap();
+        std::fs::write(source.join("bin/same.dll"), b"bin").unwrap();
+        std::fs::write(source.join("lib/same.dll"), b"lib").unwrap();
+        assert_eq!(copy_tree(&source, &dest).unwrap(), 3);
+        assert_eq!(std::fs::read(dest.join("bin/mysql.exe")).unwrap(), b"exe");
+        assert_eq!(std::fs::read(dest.join("bin/same.dll")).unwrap(), b"bin");
+        assert_eq!(std::fs::read(dest.join("lib/same.dll")).unwrap(), b"lib");
+        assert!(dest.join("bin/empty").is_dir());
+        assert!(!dest.join("mysql.exe").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// 读取包内某个文本文件的前若干字节，用于校验离线包的类型。

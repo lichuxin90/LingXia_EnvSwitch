@@ -1,5 +1,5 @@
-// tauri 只是把 externalBin 指过去的文件原样装进安装包，它不会替我们编译 envswitch-shim。
-// 这一步在编译主程序之前把转发用的控制台二进制编出来，并写成 tauri 认的命名：<名字>-<target triple>[.exe]。
+// 转发用的控制台二进制不由主构建编译（见 Cargo.toml 的 shim feature），这一步先单独把它编出来，
+// 按 <名字>-<target triple>[.exe] 放进 binaries/，交给 build.rs 用 include_bytes! 内嵌进主程序。
 // 交叉编译时由 CI 用 ENVSWITCH_TARGET 把三元组递进来；本地不传就走 rustc 的 host，
 // 顺带也不加 --target，产物直接落在 target/release 里，和主程序共用同一份编译缓存。
 import { execFileSync } from "node:child_process";
@@ -29,9 +29,9 @@ mkdirSync(binaries, { recursive: true });
 copyFileSync(built, dst);
 chmodSync(dst, 0o755);
 
-// release 目录里那份要顺手清掉：tauri 会把构建目录里的同名可执行文件也收进安装包，
-// 和 externalBin 那份撞在同一个安装路径上，msi 链接会以 ICE30 失败。
-// 老 target 目录里残留的也一样删，否则下次打包照样撞。
+// release 目录里那份要顺手清掉：tauri 会把构建目录里的可执行文件也收进安装包，
+// 发布包只该有主程序一个 exe，不该多出一个单独的转发程序。
+// 老 target 目录里残留的也一样删，否则下次打包照样被收进去。
 rmSync(built, { force: true });
 rmSync(join(dirname(built), "envswitch-shim.d"), { force: true });
 

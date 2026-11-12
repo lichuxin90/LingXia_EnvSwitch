@@ -60,6 +60,8 @@ pub struct Settings {
     pub sources: BTreeMap<String, String>,
     /// 手工指定的镜像根地址，优先级高于 sources 里的内置项。
     pub custom_base: BTreeMap<String, String>,
+    /// 包管理器索引：pip、npm/Bun、Composer、Deno npm 与 JSR 的 registry。
+    pub package_sources: BTreeMap<String, String>,
     pub proxy_mode: ProxyMode,
     pub proxy_url: Option<String>,
     pub autostart: bool,
@@ -93,9 +95,16 @@ impl Default for Settings {
         Self {
             sources,
             custom_base: BTreeMap::new(),
+            package_sources: BTreeMap::from([
+                ("pip".into(), "auto".into()),
+                ("npm".into(), "auto".into()),
+                ("composer".into(), "auto".into()),
+                ("deno".into(), "auto".into()),
+                ("deno-jsr".into(), "auto".into()),
+            ]),
             proxy_mode: ProxyMode::System,
             proxy_url: None,
-            autostart: false,
+            autostart: true,
             tray_behavior: TrayBehavior::MinimizeToTray,
             path_scope: PathScope::User,
             shim_priority: true,
@@ -125,6 +134,12 @@ impl Settings {
                 .entry(tool.as_str().to_string())
                 .or_insert_with(|| "auto".to_string());
         }
+        if matches!(s.sources.get("mysql").map(String::as_str), Some("aliyun" | "163")) {
+            s.set_source("mysql", "official");
+        }
+        for manager in super::package_sources::MANAGERS {
+            s.package_sources.entry(manager.into()).or_insert_with(|| "auto".into());
+        }
         Ok(s)
     }
 
@@ -147,5 +162,19 @@ impl Settings {
 
     pub fn set_source(&mut self, tool_key: &str, id: &str) {
         self.sources.insert(tool_key.to_string(), id.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn autostart_default_does_not_override_saved_false() {
+        let first: Settings = serde_json::from_str("{}").unwrap();
+        assert!(first.autostart);
+        let disabled: Settings = serde_json::from_str(r#"{"autostart":false}"#).unwrap();
+        assert!(!disabled.autostart);
+        let roundtrip: Settings = serde_json::from_str(&serde_json::to_string(&disabled).unwrap()).unwrap();
+        assert!(!roundtrip.autostart);
     }
 }

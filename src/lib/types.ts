@@ -1,7 +1,7 @@
 //! 与 Rust 侧一一对应的数据结构；字段名按 serde 的 camelCase 写死。
 //! 这里只做界面展示用的类型声明，任何判定都在 Rust 核心里。
 
-export type ToolId = "node" | "python" | "go" | "pypy";
+export type ToolId = "node" | "python" | "go" | "pypy" | "php" | "mysql" | "bun" | "deno";
 
 export type InstallSource = "official" | "mirror" | "offline" | "takeover";
 
@@ -216,6 +216,9 @@ export interface SourceInfo {
   probeUrl: string;
 }
 
+export interface PackageSource { id: string; label: string; url: string; }
+export interface PackageProbe { id: string; ok: boolean; latencyMs: number | null; error: string | null; }
+
 export interface ResetOutcome {
   shimsRemoved: number;
   pathRestored: string | null;
@@ -252,6 +255,7 @@ export interface ImportOutcome {
 }
 
 export interface UpdateInfo {
+  notes: string;
   current: string;
   latest: string;
   title: string;
@@ -326,6 +330,7 @@ export interface Layout {
 export interface Settings {
   sources: Record<string, string>;
   customBase: Record<string, string>;
+  packageSources: Record<string, string>;
   proxyMode: ProxyMode;
   proxyUrl: string | null;
   autostart: boolean;
@@ -363,6 +368,8 @@ export interface Boot {
   jobs: JobView[];
   hooks: HookStatus[];
   shims: ShimFile[];
+  /** 系统盘盘符，Windows 上是 `C:`；空串表示这个平台没有盘符概念。 */
+  systemDrive: string;
   note: string | null;
 }
 

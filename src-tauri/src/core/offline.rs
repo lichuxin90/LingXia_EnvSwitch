@@ -83,7 +83,7 @@ pub fn guess(path: &Path) -> Result<Guess> {
     let Some((tool, version)) = parse_name(&file_name) else {
         return Ok(Guess::unknown(
             path,
-            "文件名里读不出版本，请保留官方原始文件名（形如 node-v20.18.0-win-x64.zip）",
+            "文件名里读不出版本。请保留工具名和版本号，例如 node-v20.18.0-win-x64.zip；Bun/Deno 官方包名没有版本号，导入前请加上版本（如 1.2.3-bun-windows-x64-baseline.zip）",
         ));
     };
 
@@ -155,10 +155,24 @@ fn parse_name(raw: &str) -> Option<(ToolId, String)> {
         ToolId::Node
     } else if lower.starts_with("go") && lower.as_bytes().get(2).is_some_and(|b| b.is_ascii_digit()) {
         ToolId::Go
+    } else if lower.contains("php-") { ToolId::Php
+    } else if lower.contains("mysql-") { ToolId::MySql
+    } else if lower.contains("bun-") { ToolId::Bun
+    } else if lower.contains("deno-") { ToolId::Deno
     } else {
         return None;
     };
-    let version = version_re().captures(&lower).map(|c| c[1].to_string())?;
+    let capture = version_re().captures(&lower)?;
+    let mut version = capture[1].to_string();
+    if tool == ToolId::Php {
+        let tail = &lower[capture.get(1)?.end()..];
+        if let Some(revision) = tail.strip_prefix('-').and_then(|s| s.split('-').next()) {
+            if !revision.is_empty() && revision.chars().all(|c| c.is_ascii_digit()) {
+                version.push('-');
+                version.push_str(revision);
+            }
+        }
+    }
     Some((tool, version))
 }
 
@@ -186,6 +200,13 @@ fn matches_platform(file_name: &str, tool: ToolId) -> bool {
         return false;
     }
     let tokens: &[&str] = match (tool, platform_label()) {
+        (ToolId::Php, "windows-x64") => &["-x64"],
+        (ToolId::MySql, "windows-x64") => &["winx64"],
+        (ToolId::Php | ToolId::MySql, _) => &[],
+        (ToolId::Bun | ToolId::Deno, _) => {
+            let asset = super::tool::extra::asset_name(tool);
+            return lower.ends_with(&asset);
+        }
         (ToolId::Node, "windows-x64") => &["win-x64", "win-x86_64"],
         (ToolId::Node, "darwin-arm64") => &["darwin-arm64"],
         (ToolId::Node, "darwin-x64") => &["darwin-x64", "osx-x64"],
@@ -212,7 +233,7 @@ fn matches_platform(file_name: &str, tool: ToolId) -> bool {
 
 pub fn platform_label() -> &'static str {
     if cfg!(windows) {
-        "windows-x64"
+        if cfg!(target_arch="aarch64") { "windows-arm64" } else { "windows-x64" }
     } else if cfg!(target_os = "macos") {
         if cfg!(target_arch = "aarch64") {
             "darwin-arm64"
@@ -294,6 +315,23 @@ pub async fn import(
 #[cfg(test)]
 mod tests {
     use super::{matches_platform, parse_name, ToolId};
+
+    #[test]
+    fn additional_offline_archives_keep_tool_version_and_platform() {
+        for (name,tool,version) in [
+            ("php-8.4.1-nts-Win32-vs17-x64.zip",ToolId::Php,"8.4.1"),
+            ("php-8.4.1-1-nts-Win32-vs17-x64.zip",ToolId::Php,"8.4.1-1"),
+            ("mysql-8.4.1-winx64.zip",ToolId::MySql,"8.4.1"),
+            ("1.2.3-bun-windows-x64-baseline.zip",ToolId::Bun,"1.2.3"),
+            ("2.1.0-deno-x86_64-pc-windows-msvc.zip",ToolId::Deno,"2.1.0"),
+        ] {
+            assert_eq!(parse_name(name),Some((tool,version.into())));
+            #[cfg(all(windows,target_arch="x86_64"))]
+            assert!(matches_platform(name,tool));
+        }
+        assert!(!matches_platform("php-8.4.1-nts-Win32-vs17-x86.zip",ToolId::Php));
+        assert!(!matches_platform("mysql-8.4.1-src.zip",ToolId::MySql));
+    }
 
     #[test]
     fn 四种离线包都认得出工具与版本() {

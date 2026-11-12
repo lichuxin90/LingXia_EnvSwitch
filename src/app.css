@@ -3,63 +3,61 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
- * 视觉基线：shadcn/ui 的 Clean Admin 取法——zinc 中性阶 + 单一主色，
- * 层级靠 1px 边框和极淡阴影拉开，不用光晕、不用亚克力。
- */
+/* Frosted blue surfaces with a luminous, layered desktop canvas. */
 :root {
-  --radius: 0.7rem;
-  /* 整页铺纯白，页面和卡片靠 1px 边框分层，不再用浅灰底托卡片。 */
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(240 6% 10%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(240 6% 10%);
-  --muted: hsl(240 5% 96%);
-  --muted-foreground: hsl(240 4% 46%);
-  --border: hsl(240 6% 90%);
-  --input: hsl(240 6% 88%);
-  --ring: hsl(221 83% 53%);
-  --primary: hsl(221 83% 53%);
-  --primary-foreground: hsl(0 0% 100%);
-  --accent: hsl(214 100% 97%);
-  --accent-foreground: hsl(224 76% 33%);
-  --destructive: hsl(0 72% 51%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --success: hsl(144 61% 36%);
-  --success-foreground: hsl(0 0% 100%);
-  --warning: hsl(32 95% 33%);
-  --warning-foreground: hsl(0 0% 100%);
-  --sidebar: hsl(0 0% 100%);
-  --detail: hsl(0 0% 100%);
-  /* Clean Admin 的卡片是平的，只留一条几乎看不见的落地阴影。 */
-  --elevate: 0 1px 2px rgb(15 15 25 / 0.05);
-  --elevate-hi: 0 1px 3px rgb(15 15 25 / 0.08), 0 1px 2px rgb(15 15 25 / 0.04);
+  --radius: 1rem;
+  --background: #eef4ff;
+  --foreground: #253753;
+  --card: #ffffffc9;
+  --card-foreground: #253753;
+  --muted: #e8effa;
+  --muted-foreground: #7889a4;
+  --border: #dce6f4;
+  --input: #d5e1f2;
+  --ring: #7aa7fa;
+  --primary: #537ee9;
+  --primary-foreground: #ffffff;
+  --accent: #e6eeff;
+  --accent-foreground: #5077d4;
+  --destructive: #cb647c;
+  --destructive-foreground: #ffffff;
+  --success: #48aa94;
+  --success-foreground: #ffffff;
+  --warning: #b18a49;
+  --warning-foreground: #ffffff;
+  --sidebar: #f7faff83;
+  --detail: #f5f8ffd9;
+  --elevate: 0 8px 30px #7392c50b, inset 0 1px 0 #ffffffd9;
+  --elevate-hi: 0 12px 36px #6287ca20, inset 0 1px 0 #ffffffd9;
+  --glass-stroke: #ffffffdc;
+  --glass-shadow: 0 12px 40px #6685bd0b, inset 0 1px 0 #ffffffed;
 }
-
 .dark {
-  --background: hsl(240 6% 7%);
-  --foreground: hsl(240 5% 96%);
-  --card: hsl(240 6% 10%);
-  --card-foreground: hsl(240 5% 96%);
-  --muted: hsl(240 4% 16%);
-  --muted-foreground: hsl(240 5% 65%);
-  --border: hsl(240 4% 18%);
-  --input: hsl(240 4% 22%);
-  --ring: hsl(217 91% 60%);
-  --primary: hsl(217 91% 60%);
-  --primary-foreground: hsl(240 6% 8%);
-  --accent: hsl(217 33% 20%);
-  --accent-foreground: hsl(214 100% 92%);
-  --destructive: hsl(0 63% 50%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --success: hsl(142 60% 45%);
-  --success-foreground: hsl(240 6% 8%);
-  --warning: hsl(48 96% 53%);
-  --warning-foreground: hsl(240 6% 8%);
-  --sidebar: hsl(240 6% 9%);
-  --detail: hsl(240 5% 12%);
-  --elevate: 0 1px 2px rgb(0 0 0 / 0.35);
-  --elevate-hi: 0 1px 3px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
+  --background: #151e34;
+  --foreground: #e1eaff;
+  --card: #24324bba;
+  --card-foreground: #e1eaff;
+  --muted: #2a3853;
+  --muted-foreground: #97a9c8;
+  --border: #364866;
+  --input: #425777;
+  --ring: #84adfa;
+  --primary: #91b5ff;
+  --primary-foreground: #14213d;
+  --accent: #344d77;
+  --accent-foreground: #b1ceff;
+  --destructive: #f3a0b0;
+  --destructive-foreground: #17243c;
+  --success: #76d1b7;
+  --success-foreground: #17243c;
+  --warning: #e4c18a;
+  --warning-foreground: #17243c;
+  --sidebar: #1d2a4180;
+  --detail: #202f48e8;
+  --elevate: 0 8px 30px #050c1d15, inset 0 1px 0 #b3d0ff0a;
+  --elevate-hi: 0 12px 36px #050c1d40, inset 0 1px 0 #b3d0ff15;
+  --glass-stroke: #9abbea20;
+  --glass-shadow: 0 12px 40px #050c1d15, inset 0 1px 0 #b3d0ff15;
 }
 
 @theme inline {
@@ -88,7 +86,7 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-sidebar: var(--sidebar);
   --color-detail: var(--detail);
-  /* 字号阶梯对齐参考稿：正文 14，标题 15，密集信息 13，不再用 11/12px 的小字。 */
+  /* Shared content type scale; compact navigation uses its own sizes. */
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.125rem;
   --text-sm: 0.875rem;
@@ -114,7 +112,7 @@
     background: var(--background);
     color: var(--foreground);
     font-family:
-      "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Yu Gothic UI", "Noto Sans CJK JP",
+      "Inter", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Yu Gothic UI", "Noto Sans CJK JP",
       system-ui, -apple-system, sans-serif;
     font-size: 0.875rem;
     -webkit-font-smoothing: antialiased;
@@ -156,3 +154,86 @@
     box-shadow: var(--elevate-hi);
   }
 }
+
+/* Desktop frame and shared glass controls. */
+.desktop-root {
+  padding: 0;
+  background: radial-gradient(ellipse at 8% 5%, #f5faff 0, transparent 42%), radial-gradient(ellipse at 96% 95%, #b9c8ff 0, transparent 58%), linear-gradient(135deg, #dfecff, #d4dffc 65%, #dfe7ff);
+}
+.app-shell { position: relative; overflow: hidden; border: 0; border-radius: 0; background: #f4f8ff8f; box-shadow: 0 22px 80px #6483c12b, inset 0 1px 0 #fff; backdrop-filter: blur(36px); }
+.dark .desktop-root { background: radial-gradient(ellipse at 0 0, #2b4567, transparent 52%), radial-gradient(ellipse at 100% 100%, #343c74, transparent 60%), #121d32; }
+.dark .app-shell { background: #17243abf; border-color: #adc9f02b; box-shadow: 0 22px 80px #080f294a, inset 0 1px 0 #ffffff12; }
+.app-sidebar { width: 208px; border-right: 1px solid var(--glass-stroke); }
+.sidebar-brand { display: flex; height: 88px; flex-shrink: 0; padding: 0 20px; align-items: center; gap: 11px; text-align: left; }
+.brand-mark { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 12px; background: #fff9; border: 1px solid var(--glass-stroke); flex-shrink: 0; }
+.brand-mark img { width: 40px; height: 40px; }
+.sidebar-brand-name { font-size: 16px; font-weight: 650; letter-spacing: -.4px; }
+.sidebar-brand-name small { display: block; font-size: 9px; font-weight: 400; letter-spacing: 0; margin-top: 4px; color: var(--muted-foreground); }
+.sidebar-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: 0 14px 8px; }
+.sidebar-scroll > .nav-label { display: block; margin-top: 16px; margin-bottom: 8px; }
+.sidebar-scroll > ul + .nav-label { margin-top: 0; }
+.workspace-nav { padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.nav-row { position: relative; min-height: 40px; border: 1px solid transparent; border-radius: 10px; gap: 10px; padding: 9px 11px; font-size: 13px; color: var(--muted-foreground); }
+.workspace-nav .nav-row { flex-direction: row; gap: 11px; min-height: 42px; padding: 10px 11px; }
+.workspace-nav .nav-row > svg { width: 19px; height: 19px; }
+.workspace-nav .nav-row > span { flex: 1; text-align: left; }
+.nav-row[aria-current="page"] { background: linear-gradient(130deg, #ffffffef, #ffffff70); color: var(--accent-foreground); border-color: var(--glass-stroke); box-shadow: 0 4px 14px #7f9cc213; }
+.dark .nav-row[aria-current="page"] { background: linear-gradient(130deg, #6686bc40, #6387d01a); }
+.runtime-nav .nav-row { gap: 10px; padding-inline: 11px; }
+.runtime-nav .nav-row .mono { display: none; }
+.runtime-nav .nav-row > svg:first-child { display: block; width: 18px; height: 18px; }
+.runtime-nav > li > ul { margin-left: 8px; padding-left: 6px; }
+.runtime-nav > li > ul button { font-size: 10px; padding: 5px 4px; }
+.manager-nav { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.manager-nav .nav-row { padding: 10px 11px; font-size: 12px; gap: 10px; }
+.manager-nav .nav-row > svg { width: 14px; height: 14px; flex-shrink: 0; }
+.sidebar-footer { border-top: 1px solid var(--border); padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
+.sidebar-footer .lock-label { display: block; } .sidebar-footer kbd { font-size: 9px; }
+.sidebar-footer .lock-row { justify-content: space-between; }
+.sidebar-footer .settings-link { justify-content: flex-start; gap: 9px; font-size: 12px; }
+.sidebar-footer .settings-link > span { flex: 1; }
+.nav-label { font-size: 10px; font-weight: 600; letter-spacing: .12em; color: var(--muted-foreground); }
+.app-main { container-type: inline-size; }
+.app-main > div > div > header { min-height: 70px; background: transparent; border-color: var(--glass-stroke); flex-wrap: wrap; }
+.app-main > div > div > header h2 { font-size: 17px; letter-spacing: -.3px; }
+.ui-section, .version-list { border: 1px solid var(--glass-stroke); border-radius: 20px; background: var(--card); box-shadow: var(--glass-shadow); }
+.ui-button { border-radius: 10px; transition: background .2s, border-color .2s, color .2s, box-shadow .2s, transform .2s; }
+.ui-button:hover:not(:disabled) { transform: translateY(-1px); }
+.ui-button:active:not(:disabled) { transform: translateY(0); }
+.ui-button-primary { background: linear-gradient(125deg, #6c9df6, #6d81e9); color: #fff; border: 1px solid #91aef8; box-shadow: 0 5px 14px #688ee52e, inset 0 1px 0 #ffffff36; }
+.ui-button-outline { background: var(--card); border-color: var(--glass-stroke); box-shadow: 0 3px 10px #7392c50a; }
+.ui-button-primary:hover:not(:disabled) { box-shadow: 0 7px 20px #688ee54d; filter: brightness(1.04); }
+input:not([type="checkbox"]):not([type="radio"]), textarea, select { border-radius: 10px; transition: border-color .15s, box-shadow .15s; }
+input::placeholder, textarea::placeholder { color: var(--muted-foreground); opacity: .75; }
+kbd { font-family: inherit; font-size: 10px; border: 1px solid var(--input); border-radius: 4px; padding: 1px 4px; color: var(--muted-foreground); }
+.settings-window { inset: 36px 0 0; border-radius: 0; border: 1px solid var(--glass-stroke); overflow: hidden; background: var(--background); box-shadow: var(--elevate-hi); }
+.detail-shell { width: 304px; background: var(--detail); }
+.detail-shell aside { background: transparent; border-color: var(--glass-stroke); }
+.detail-shell aside > div:first-child { padding: 25px 20px; }
+.detail-shell aside > div + div { padding: 20px; }
+@media (max-width: 1050px) {
+  .app-sidebar { width: 190px; }
+  .sidebar-brand { padding-inline: 15px; }
+  .detail-shell { width: 280px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Custom chrome is shared by startup, setup and the main application. */
+body { padding-top: 36px; }
+.h-dvh { height: calc(100dvh - 36px); }
+@media (max-height: 820px) {
+  .sidebar-brand { height: 76px; }
+  .sidebar-scroll > .nav-label { margin-top: 8px; margin-bottom: 6px; }
+  .workspace-nav { padding-bottom: 8px; margin-bottom: 8px; }
+  .workspace-nav .nav-row { min-height: 38px; padding-block: 8px; }
+  .runtime-nav .nav-row { min-height: 36px; padding-block: 7px; }
+  .manager-nav { margin-top: 8px; padding-top: 6px; }
+  .manager-nav .nav-row { min-height: 36px; padding-block: 8px; }
+  .sidebar-footer { padding-block: 10px; gap: 10px; }
+}
+
+/* Loading feedback floats above cached results without delaying interaction. */
+.runtime-loading { display: flex; min-height: 230px; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--primary); font-size: 13px; }
+.runtime-loading-float { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: center; gap: 8px; width: fit-content; max-width: 100%; margin: 0 auto -34px; padding: 8px 16px; border: 1px solid var(--glass-stroke); border-radius: 999px; background: var(--card); backdrop-filter: blur(12px); box-shadow: var(--elevate); color: var(--primary); font-size: 12px; pointer-events: none; }

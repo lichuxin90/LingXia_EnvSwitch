@@ -9,11 +9,14 @@
   import { api } from "$lib/ipc";
   import { LOCALE_LABEL, t, type Locale, type MsgKey } from "$lib/i18n/store.svelte";
   import { app, type View } from "$lib/state.svelte";
+  import AboutView from "$lib/views/AboutView.svelte";
+  import EnvView from "$lib/views/EnvView.svelte";
+  import MirrorView from "$lib/views/MirrorView.svelte";
   import { ALL_TOOLS, TOOL_LABEL, humanBytes, shortTime } from "$lib/utils";
   import type { InstalledVersion, Language, ToolId } from "$lib/types";
 
   /** 浮层里的分区：左边选，右边只出现选中的那一块，跟主侧栏一个用法。 */
-  type Pane = "general" | "dirs" | "share" | "usage";
+  type Pane = "general" | "dirs" | "share" | "usage" | View;
   const panes: { key: Pane; label: MsgKey }[] = [
     { key: "general", label: "set.paneGeneral" },
     { key: "dirs", label: "set.dirTitle" },
@@ -21,7 +24,7 @@
     { key: "usage", label: "set.usageTitle" },
   ];
 
-  /** 管理入口不在设置里重复一套配置界面，点一下直接进对应页面；版本清单侧栏本来就有，不再列一遍。 */
+  /** 管理入口不重复一套配置界面，直接把整页搬进浮层右栏：左栏一直在，来回切不用再开一次设置。 */
   const manage: { view: View; key: MsgKey; icon: typeof Globe }[] = [
     { view: "mirror", key: "nav.mirror", icon: Globe },
     { view: "env", key: "nav.env", icon: ShieldCheck },
@@ -29,11 +32,6 @@
   ];
 
   let pane = $state<Pane>("general");
-
-  function openManage(view: View): void {
-    app.closeSettings();
-    app.setView(view);
-  }
 
   let perTool = $state<Record<ToolId, InstalledVersion[]> | null>(null);
 
@@ -88,8 +86,8 @@
 
 <!-- min-w-0 不能省：整页覆盖后这一栏是弹性子项，启动日志那串长路径会把宽度顶到窗口外面。 -->
 <div class="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
-  <!-- 浮层内的侧栏：设置分区留在原地，管理四项跳出去看整页。 -->
-  <aside class="shrink-0 border-b border-border p-3 md:w-64 md:border-r md:border-b-0">
+  <!-- 浮层内的侧栏：设置分区和管理三项都在这里切，右栏换内容，侧栏不走。 -->
+  <aside class="shrink-0 border-b border-border bg-sidebar p-3 md:w-56 md:border-r md:border-b-0">
     <p class="px-2 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{t("nav.settings")}</p>
     <ul class="space-y-0.5">
       {#each panes as p (p.key)}
@@ -98,7 +96,7 @@
             type="button"
             class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors
               {pane === p.key
-                ? 'bg-primary font-medium text-primary-foreground'
+                ? 'bg-accent font-medium text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
             aria-current={pane === p.key ? "true" : undefined}
             onclick={() => (pane = p.key)}
@@ -117,19 +115,30 @@
         <li>
           <button
             type="button"
-            class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors
+              {pane === m.view
+                ? 'bg-accent font-medium text-accent-foreground'
+                : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
+            aria-current={pane === m.view ? "true" : undefined}
             aria-label={t(m.key)}
-            onclick={() => openManage(m.view)}
+            onclick={() => (pane = m.view)}
           >
             <Icon class="size-4 shrink-0" />
             <span class="min-w-0 flex-1">{t(m.key)}</span>
-            <ChevronRight class="size-3.5 shrink-0" />
+            {#if pane === m.view}<ChevronRight class="size-3.5 shrink-0" />{/if}
           </button>
         </li>
       {/each}
     </ul>
   </aside>
 
+  {#if pane === "mirror"}
+    <div class="min-h-0 min-w-0 flex-1"><MirrorView /></div>
+  {:else if pane === "env"}
+    <div class="min-h-0 min-w-0 flex-1"><EnvView /></div>
+  {:else if pane === "about"}
+    <div class="min-h-0 min-w-0 flex-1"><AboutView /></div>
+  {:else}
   <div class="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5">
     {#if pane === "general"}
       <Section title={t("set.startupTitle")} desc={t("set.startupDesc")}>
@@ -294,4 +303,5 @@
       </Section>
     {/if}
   </div>
+  {/if}
 </div>

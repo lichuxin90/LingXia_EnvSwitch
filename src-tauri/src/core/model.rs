@@ -14,13 +14,21 @@ pub enum ToolId {
     Go,
     #[serde(rename = "pypy")]
     PyPy,
+    #[serde(rename = "php")]
+    Php,
+    #[serde(rename = "mysql")]
+    MySql,
+    #[serde(rename = "bun")]
+    Bun,
+    #[serde(rename = "deno")]
+    Deno,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 4] = [ToolId::Node, ToolId::Python, ToolId::Go, ToolId::PyPy];
+    pub const ALL: [ToolId; 8] = [ToolId::Node, ToolId::Python, ToolId::Go, ToolId::PyPy, ToolId::Php, ToolId::MySql, ToolId::Bun, ToolId::Deno];
 
     /// 侧边栏「运行时」列表里单列出来的工具；PyPy 归在 Python 底下。
-    pub const NAV: [ToolId; 3] = [ToolId::Node, ToolId::Python, ToolId::Go];
+    pub const NAV: [ToolId; 7] = [ToolId::Node, ToolId::Python, ToolId::Go, ToolId::Php, ToolId::MySql, ToolId::Bun, ToolId::Deno];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -28,6 +36,11 @@ impl ToolId {
             ToolId::Python => "python",
             ToolId::Go => "go",
             ToolId::PyPy => "pypy",
+            ToolId::Php => "php",
+            ToolId::MySql => "mysql",
+            ToolId::Bun => "bun",
+            ToolId::Deno => "deno",
+
         }
     }
 
@@ -37,6 +50,11 @@ impl ToolId {
             ToolId::Python => "Python",
             ToolId::Go => "Go",
             ToolId::PyPy => "PyPy",
+            ToolId::Php => "PHP",
+            ToolId::MySql => "MySQL",
+            ToolId::Bun => "Bun",
+            ToolId::Deno => "Deno",
+
         }
     }
 
@@ -62,6 +80,10 @@ impl ToolId {
             "python" | "python3" | "py" => Some(ToolId::Python),
             "go" | "golang" => Some(ToolId::Go),
             "pypy" | "pypy3" => Some(ToolId::PyPy),
+            "php" => Some(ToolId::Php),
+            "mysql" => Some(ToolId::MySql),
+            "bun" => Some(ToolId::Bun),
+            "deno" => Some(ToolId::Deno),
             _ => None,
         }
     }

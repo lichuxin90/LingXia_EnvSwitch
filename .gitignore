@@ -1,6 +1,8 @@
 # 依赖与构建产物
 node_modules/
 /dist
+# 本地发布产物，里面还跟着用户数据目录，不入库
+/publish/
 /.svelte-kit
 /src-tauri/target/
 /src-tauri/gen/schemas/

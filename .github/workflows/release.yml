@@ -2,8 +2,8 @@
 # 再把 CHANGELOG.md 里对应版本的那一段贴进 GitHub Release 正文。
 # 也可以在仓库的 Actions 页手动运行，手动运行时填要发布的标签名。
 #
-# 安装包里的 envswitch-shim 由 scripts/stage-shim.mjs 先编出来再交给 tauri 打包，
-# 少了它，界面装得上但终端里的 node/python/go 起不来。
+# 转发程序 envswitch-shim 由 scripts/stage-shim.mjs 先编出来，再内嵌进主程序（include_bytes!），
+# 运行时释放到数据目录；少了它，界面装得上但终端里的 node/python/go 起不来。
 
 name: Release
 
@@ -139,49 +139,22 @@ jobs:
       - name: 出安装包
         run: pnpm tauri build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}"
 
-      - name: 核对包里带上了转发用的 envswitch-shim
+      - name: 核对转发程序已内嵌进主程序
         shell: bash
         run: |
           set -euo pipefail
-          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          rel="src-tauri/target/${{ matrix.target }}/release"
+          staged="src-tauri/binaries/envswitch-shim-${{ matrix.target }}"
+          exe="$rel/envswitch"
           case "${{ runner.os }}" in
-            Windows)
-              msi="$(ls "$bundle"/msi/*.msi | head -1)"
-              sevenz="$(command -v 7z || echo '/c/Program Files/7-Zip/7z.exe')"
-              echo "--- $msi 里与 envswitch 有关的条目 ---"
-              "$sevenz" l "$msi" | grep -i envswitch
-              # 7z 列出的是 msi 内部的条目名，转发程序在那儿叫 Bin_envswitch_shim.exe（下划线），
-              # 只按文件名 envswitch-shim.exe 去找会一条都不命中。
-              hits=$("$sevenz" l "$msi" | grep -cE 'envswitch[-_]shim' || true)
-              ;;
-            macOS)
-              # 打完 dmg 后 tauri 会把 bundle/macos 里的 .app 清掉，只剩 dmg；
-              # 所以要挂载 dmg 看真发出去的那份，不能去翻已经删掉的中间目录。
-              dmg="$(ls "$bundle"/dmg/*.dmg | head -1)"
-              echo "--- 挂载 $dmg 检查 .app 内的转发二进制 ---"
-              mnt="$(mktemp -d)"
-              hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" > /dev/null
-              app="$(find "$mnt" -maxdepth 2 -iname '*.app' | head -1)"
-              if [ -z "$app" ]; then
-                echo "挂载点里没有 .app："
-                ls -l "$mnt"
-                hdiutil detach "$mnt" || true
-                exit 1
-              fi
-              echo "包目录：$app"
-              find "$app" -iname '*envswitch*shim*' -exec ls -l {} +
-              hits=$(find "$app" -iname '*envswitch*shim*' -size +1k | wc -l)
-              hdiutil detach "$mnt" > /dev/null
-              ;;
-            Linux)
-              echo "--- AppImage 与 deb 源目录内的转发二进制 ---"
-              find "$bundle" -iname 'envswitch-shim*' -exec ls -l {} +
-              hits=$(find "$bundle" -iname 'envswitch-shim*' -size +1k | wc -l)
-              ;;
+            Windows) staged="$staged.exe"; exe="$rel/envswitch.exe" ;;
           esac
-          # 没有命中时 find 会安静地返回 0，所以这里按计数判定，别把"没找到"读成"检查通过"。
-          echo "包内体积正常的转发二进制：$hits 个"
-          [ "$hits" -ge 1 ]
+          ls -l "$staged" "$exe"
+          # 内嵌的原料必须真实存在且有体积；主程序要比转发程序大出一截。
+          [ "$(wc -c < "$staged")" -gt 1024 ]
+          [ "$(wc -c < "$exe")" -gt 2097152 ]
+          # 逐字节核对：内嵌的必须是刚编出来的那份，不是缓存里的旧字节。
+          node -e "const fs=require('fs');const b=fs.readFileSync(process.argv[1]);const x=fs.readFileSync(process.argv[2]);if(!x.includes(b)){console.error('主程序内嵌的转发程序与刚编出来的不一致');process.exit(1)}console.log('内嵌核对通过：'+b.length+' 字节')" "$staged" "$exe"
 
       - name: 另出一份 Windows 免安装包
         if: runner.os == 'Windows'
@@ -190,9 +163,8 @@ jobs:
           $rel = "src-tauri/target/${{ matrix.target }}/release"
           $stage = "portable/EnvSwitch"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          # 转发程序已内嵌进主程序，免安装包只需要这一个 exe。
           Copy-Item "$rel/envswitch.exe" "$stage/EnvSwitch.exe"
-          # 转发程序不再由主构建产出（见 Cargo.toml 里 shim 这个 feature），免安装包里用 stage 好的那份。
-          Copy-Item "src-tauri/binaries/envswitch-shim-${{ matrix.target }}.exe" "$stage/envswitch-shim.exe"
           New-Item -ItemType Directory -Force -Path release-dist | Out-Null
           Compress-Archive -Path "$stage/*" -DestinationPath "release-dist/EnvSwitch-$env:VERSION-x64-portable.zip"
 

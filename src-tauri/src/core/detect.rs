@@ -56,6 +56,10 @@ const RUNTIME_NAMES: &[(ToolId, &[&str])] = &[
     (ToolId::Python, &["python", "python3"]),
     (ToolId::Go, &["go"]),
     (ToolId::PyPy, &["pypy", "pypy3"]),
+    (ToolId::Php, &["php"]),
+    (ToolId::MySql, &["mysql"]),
+    (ToolId::Bun, &["bun"]),
+    (ToolId::Deno, &["deno"]),
 ];
 
 pub fn path_view() -> Result<PathView> {
@@ -279,7 +283,7 @@ fn exe_is_tool_entry(exe: &Path, plugin: Option<Plugin>) -> bool {
 /// Windows 上 node.exe 同级就是版本根；类 Unix 下 bin 的上一级才是根。
 fn guess_root(exe: &Path) -> PathBuf {
     let parent = exe.parent().map(Path::to_path_buf).unwrap_or_default();
-    if !cfg!(windows) && parent.file_name().and_then(|n| n.to_str()) == Some("bin") {
+    if parent.file_name().and_then(|n| n.to_str()) == Some("bin") {
         return parent.parent().map(Path::to_path_buf).unwrap_or(parent);
     }
     parent

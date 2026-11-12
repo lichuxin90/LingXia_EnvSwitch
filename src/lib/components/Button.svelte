@@ -25,15 +25,15 @@
   }: Props = $props();
 
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors " +
+    "ui-button inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors " +
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
     "disabled:pointer-events-none disabled:opacity-45";
 
   const variants = {
-    default: "bg-primary text-primary-foreground elevate hover:bg-primary/90",
+    default: "ui-button-primary",
     secondary: "bg-muted text-foreground hover:bg-muted/70",
-    outline: "border border-input bg-card elevate hover:bg-accent hover:text-accent-foreground",
-    ghost: "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+    outline: "ui-button-outline border border-input bg-card hover:border-primary/30 hover:bg-accent/50",
+    ghost: "text-muted-foreground hover:bg-muted hover:text-foreground",
     danger: "border border-destructive/30 bg-destructive/8 text-destructive hover:bg-destructive/15",
     link: "text-primary underline-offset-4 hover:underline",
   };

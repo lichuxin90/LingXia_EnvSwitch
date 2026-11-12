@@ -31,8 +31,7 @@
   });
 
   async function pickDir(): Promise<void> {
-    const dir = await api.pickFolder();
-    if (dir) await app.refreshDir(dir);
+    await app.pickProjectDir();
   }
 
   /** 四个运行时都能锁：点开哪个就只读那个工具的已装版本，不用先切页面。 */
@@ -74,8 +73,9 @@
       <div class="flex items-start gap-3">
         <FolderOpen class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div class="min-w-0 flex-1">
-          <p class="mono break-all text-sm">{ctx?.dir ?? t("proj.noDir")}</p>
-          {#if ctx && !ctx.exists}
+          <!-- 后端没选目录时给的是空串不是 null，?? 兜不住，会画出一行空白加一句"目录不在了"。 -->
+          <p class="mono break-all text-sm">{ctx?.dir || t("proj.noDir")}</p>
+          {#if ctx?.dir && !ctx.exists}
             <p class="mt-1 text-xs text-warning">{t("proj.dirGone")}</p>
           {/if}
           <ul class="mt-2 space-y-1">
@@ -204,7 +204,7 @@
                 type="button"
                 class="mono min-w-0 flex-1 truncate text-left hover:underline"
                 title={p.dir}
-                onclick={() => void app.refreshDir(p.dir)}
+                onclick={() => void app.useProjectDir(p.dir)}
               >{p.dir}</button>
               {#each Object.entries(p.entries) as [k, v] (k)}
                 <Badge tone="outline">{k} {v}</Badge>
@@ -214,7 +214,7 @@
                 variant="ghost"
                 title={t("proj.forgetTip")}
                 onclick={async () => {
-                  await api.forgetProject(p.dir);
+                  await app.forgetProject(p.dir);
                   await reloadProjects();
                 }}
               >
