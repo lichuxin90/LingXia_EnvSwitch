@@ -39,7 +39,7 @@ pub fn set(on: bool) -> Result<()> {
 fn command() -> String {
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("envswitch.exe"));
     // 路径里有空格和中文，整条要带引号，否则系统只执行到第一个空格。
-    format!("\"{}\" --guard", exe.display())
+    format!("\"{}\" --guard --background", exe.display())
 }
 
 /// 启动项还在，但登记的是别的文件（装过两处、或挪过目录），或还是没带 --guard 的老一条：

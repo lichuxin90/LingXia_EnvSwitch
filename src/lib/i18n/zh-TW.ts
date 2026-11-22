@@ -8,6 +8,7 @@ export const zhTW: Record<MsgKey, string> = {
   "window.minimize": "最小化",
   "window.maximize": "最大化 / 還原",
   "window.close": "關閉視窗",
+  "external.managed": "已納入管理",
   "external.refresh": "重新偵測",
   "external.refreshing": "偵測中…",
   "external.refreshed": "偵測完成，目前發現 {n} 個本機環境。",

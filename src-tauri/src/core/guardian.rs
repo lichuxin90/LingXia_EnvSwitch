@@ -225,6 +225,7 @@ pub fn run_guard() -> i32 {
         let mark = mark_path(restarts + 1, nonce);
         note(&format!("拉起主程序（第 {} 次）", restarts + 1));
         let spawned = Command::new(&exe)
+            .arg("--background")
             .env(READY_MARK_ENV, &mark)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

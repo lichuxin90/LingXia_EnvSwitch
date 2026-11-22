@@ -1,6 +1,6 @@
 [package]
 name = "envswitch"
-version = "0.1.8"
+version = "0.1.9"
 description = "灵匣·EnvSwitch 多语言运行时版本管理器"
 authors = ["李初心"]
 edition = "2024"

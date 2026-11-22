@@ -7,6 +7,7 @@ export const zhCN = {
   "window.minimize": "最小化",
   "window.maximize": "最大化 / 还原",
   "window.close": "关闭窗口",
+  "external.managed": "已纳入管理",
   "external.refresh": "刷新检测",
   "external.refreshing": "检测中…",
   "external.refreshed": "检测完成，当前发现 {n} 个本地环境。",

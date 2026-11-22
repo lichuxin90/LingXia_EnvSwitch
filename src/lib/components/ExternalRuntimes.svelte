@@ -10,7 +10,7 @@
   let pending = $state<string | null>(null);
   let reinstall = $state<ForeignRuntime | null>(null);
   async function adopt(f: ForeignRuntime): Promise<void> {
-    if (!f.tool || pending) return;
+    if (!f.tool || f.managed || pending) return;
     if (!await app.askDanger(t("external.adoptTitle"), t("external.adoptBody", { path: f.root }), t("env.takeover"), "default")) return;
     pending = f.exe;
     try { await app.adopt(f.exe, f.tool, f.version, false); }
@@ -34,10 +34,10 @@
     <ul>
       {#each app.scan.foreign as f (f.exe)}
         <li>
-          <div class="external-info"><strong>{f.name} <span class="mono">{f.version ?? "—"}</span></strong><p class="mono" title={f.exe}>{f.exe}</p>{#if !f.takeable}<p>{f.whyNot ?? t("env.notTakeable")}</p>{/if}</div>
+          <div class="external-info"><strong>{f.name} <span class="mono">{f.version ?? "—"}</span></strong><p class="mono" title={f.exe}>{f.exe}</p>{#if !f.managed && !f.takeable}<p>{f.whyNot ?? t("env.notTakeable")}</p>{/if}</div>
           <div class="external-actions">
-            {#if f.takeable && f.tool}<Button size="sm" disabled={pending !== null} onclick={() => void adopt(f)}><FolderInput size={14} />{pending === f.exe ? t("external.adopting") : t("env.takeover")}</Button>{/if}
-            <Button size="sm" variant="outline" onclick={() => reinstall = f}><Download size={14} />{t("external.reinstall")}</Button>
+            {#if f.managed}<span class="rounded-md bg-accent px-3 py-2 text-xs font-medium text-primary">{t("external.managed")}</span>{:else if f.takeable && f.tool}<Button size="sm" disabled={pending !== null} onclick={() => void adopt(f)}><FolderInput size={14} />{pending === f.exe ? t("external.adopting") : t("env.takeover")}</Button>{/if}
+            {#if !f.managed}<Button size="sm" variant="outline" onclick={() => reinstall = f}><Download size={14} />{t("external.reinstall")}</Button>{/if}
           </div>
         </li>
       {/each}

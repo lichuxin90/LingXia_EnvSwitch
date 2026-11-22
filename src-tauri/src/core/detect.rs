@@ -119,6 +119,7 @@ fn same_dir(raw: &str, path: &Path) -> bool {
 /// 扫一遍环境，给出冲突清单和可接管的现成安装。
 pub fn scan() -> Result<ScanReport> {
     let view = path_view()?;
+    let registry = Registry::load()?;
     let mut report = ScanReport {
         conflicts: Vec::new(),
         foreign: Vec::new(),
@@ -150,7 +151,9 @@ pub fn scan() -> Result<ScanReport> {
                 continue;
             }
             seen.push(exe.clone());
-            let item = describe(tool, &exe);
+            let mut item = describe(tool, &exe);
+            item.managed = registry.records.iter().any(|r| r.usable() && same_installation(r, tool, &exe, &item.root));
+            if item.managed { item.takeable = false; item.why_not = None; }
             report.conflicts.push(Conflict {
                 name: tool.display().to_string(),
                 kind: ConflictKind::Runtime,
@@ -253,6 +256,7 @@ fn describe(tool: ToolId, exe: &Path) -> ForeignRuntime {
     };
 
     ForeignRuntime {
+        managed: false,
         tool: Some(tool),
         name: exe
             .file_stem()
@@ -267,6 +271,12 @@ fn describe(tool: ToolId, exe: &Path) -> ForeignRuntime {
         // 默认引用原目录：接管老安装不重复占磁盘，也不会删用户的东西。
         mode: TakeoverMode::Reference,
     }
+}
+
+fn same_installation(record: &Record, tool: ToolId, exe: &Path, root: &Path) -> bool {
+    record.tool == tool && (paths::norm_eq(&record.exec_path, exe)
+        || paths::norm_eq(&record.dir, root)
+        || record.origin.as_ref().is_some_and(|origin| paths::norm_eq(origin, root)))
 }
 
 fn exe_is_tool_entry(exe: &Path, plugin: Option<Plugin>) -> bool {
@@ -452,4 +462,19 @@ pub fn adopt(
         .into_iter()
         .find(|i| i.version == version)
         .ok_or_else(|| Error::Detail("接管记录写好了但读不回来".to_string()))
+}
+
+#[cfg(test)]
+mod managed_tests {
+    use super::*;
+    #[test]
+    fn management_matches_location_not_just_version() {
+        let record = Record { tool: ToolId::Python, version: "3.13.0".into(), dir: PathBuf::from("C:/Python"), exec_path: PathBuf::from("C:/Python/python.exe"), ..Default::default() };
+        assert!(same_installation(&record, ToolId::Python, Path::new("C:/Python/python.exe"), Path::new("C:/Python")));
+        assert!(same_installation(&record, ToolId::Python, Path::new("C:/Python/python3.exe"), Path::new("C:/Python")));
+        assert!(!same_installation(&record, ToolId::Python, Path::new("D:/Python/python.exe"), Path::new("D:/Python")));
+        assert!(!same_installation(&record, ToolId::Node, Path::new("C:/Python/node.exe"), Path::new("C:/Python")));
+        let copied = Record { dir: PathBuf::from("D:/managed/python"), exec_path: PathBuf::from("D:/managed/python/python.exe"), origin: Some(PathBuf::from("C:/Python")), ..record };
+        assert!(same_installation(&copied, ToolId::Python, Path::new("C:/Python/python.exe"), Path::new("C:/Python")));
+    }
 }

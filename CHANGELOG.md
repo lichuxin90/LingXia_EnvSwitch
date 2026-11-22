@@ -7,6 +7,13 @@
 
 ---
 
+## [0.1.9] - 2026-11-20
+
+- 开机自启不再把主界面弹出来抢焦点，直接缩进托盘后台跑；守护重启也走后台。点托盘或手动开程序才出界面，设置里的开机启动开关照旧生效。
+- 已纳管且文件还在的本地安装，首页和环境页直接标「已纳入管理」，不再重复摆纳管和卸载重装按钮；刷新检测会同步这个状态。
+
+---
+
 ## [0.1.8] - 2026-11-12
 
 0.1.4 到 0.1.7 只在本地编过，没发过包，改动一起算进这一版。
@@ -59,6 +66,13 @@
 ---
 
 ## English
+
+### [0.1.9] - 2026-11-20
+
+- Autostart no longer pops the main window or steals focus: it boots straight into the tray, and guardian restarts do the same. Click the tray icon or launch manually to get the window; the saved autostart toggle still applies.
+- Local installs that are already managed and still on disk show as "Already managed" on home and environment pages, without repeating the adopt and uninstall/reinstall buttons; the refresh check keeps that state current.
+
+---
 
 ### [0.1.8] - 2026-11-12
 

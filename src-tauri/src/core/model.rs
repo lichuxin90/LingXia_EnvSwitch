@@ -370,6 +370,8 @@ pub enum BackupKind {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignRuntime {
+    /// 当前安装路径已经登记且记录仍可用。
+    pub managed: bool,
     pub tool: Option<ToolId>,
     pub name: String,
     pub version: Option<String>,

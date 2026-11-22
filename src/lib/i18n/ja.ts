@@ -8,6 +8,7 @@ export const ja: Record<MsgKey, string> = {
   "window.minimize": "最小化",
   "window.maximize": "最大化 / 復元",
   "window.close": "ウィンドウを閉じる",
+  "external.managed": "管理済み",
   "external.refresh": "再検出",
   "external.refreshing": "検出中…",
   "external.refreshed": "検出完了：ローカル環境が {n} 件見つかりました。",

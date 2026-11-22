@@ -100,8 +100,8 @@
   }
 
   $effect(() => {
-    // 画出一帧就向守护报"活着"：首屏取数据可能要等网络，那份慢不该被当成起不来。
-    requestAnimationFrame(() => void api.appReady().catch(() => {}));
+    // 挂载后立即通知守护；隐藏窗口不一定绘制首帧，不能等待 requestAnimationFrame。
+    void api.appReady().catch(() => {});
     void boot();
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");

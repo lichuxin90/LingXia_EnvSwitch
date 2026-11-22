@@ -88,14 +88,14 @@ pub fn run() {
 /// 建窗口、装托盘、注册命令。失败一律往上交，由 run() 负责让人看见。
 fn serve() -> tauri::Result<tauri::App> {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if !background_launch(&args) { show_main(app); }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec![]),
+            Some(vec!["--background"]),
         ))
         .manage(Watcher::default())
         .manage(ShellLang::default())
@@ -204,6 +204,10 @@ fn show_main(app: &AppHandle) {
 
 /// 主窗口在代码里建，不在配置里建：配置项的 `dataDirectory` 只收相对路径（相对 C 盘的
 /// 本地数据目录），而浏览器内核的缓存要跟着数据目录走，只有这里能给绝对路径。
+fn background_launch(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--background" || arg == "--guard")
+}
+
 fn make_main(app: &tauri::App) -> tauri::Result<()> {
     let (w, h, min_w, min_h) = fit_to_screen(app);
     let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -211,6 +215,8 @@ fn make_main(app: &tauri::App) -> tauri::Result<()> {
         .inner_size(w, h)
         .min_inner_size(min_w, min_h)
         .resizable(true)
+        .visible(!background_launch(&std::env::args().collect::<Vec<_>>()))
+        .focused(!background_launch(&std::env::args().collect::<Vec<_>>()))
         .decorations(false)
         // 成品不给开发者工具：右键菜单里的"检查"和 F12 一起关掉，开发构建照常留着。
         .devtools(cfg!(debug_assertions))
@@ -1372,4 +1378,15 @@ fn ai_write_rules(dir: String, file: String, content: String) -> Result<String> 
 #[tauri::command]
 fn ai_remove_rules(dir: String, file: String) -> Result<String> {
     aiclients::remove_rules(&dir, &file)
+}
+
+#[cfg(test)]
+mod startup_tests {
+    #[test]
+    fn only_background_and_autostart_launches_stay_hidden() {
+        for args in [vec!["app.exe", "--background"], vec!["app.exe", "--guard"], vec!["app.exe", "--guard", "--background"]] {
+            assert!(super::background_launch(&args.into_iter().map(String::from).collect::<Vec<_>>()));
+        }
+        assert!(!super::background_launch(&["app.exe".into()]));
+    }
 }

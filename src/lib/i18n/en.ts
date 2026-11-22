@@ -9,6 +9,7 @@ export const en: Record<MsgKey, string> = {
   "window.minimize": "Minimize",
   "window.maximize": "Maximize / Restore",
   "window.close": "Close window",
+  "external.managed": "Already managed",
   "external.refresh": "Refresh detection",
   "external.refreshing": "Scanning…",
   "external.refreshed": "Scan complete: {n} local runtimes found.",

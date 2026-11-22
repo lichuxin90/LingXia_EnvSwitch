@@ -169,6 +169,7 @@ export interface PathView {
 }
 
 export interface ForeignRuntime {
+  managed: boolean;
   tool: ToolId | null;
   name: string;
   version: string | null;
